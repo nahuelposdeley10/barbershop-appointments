@@ -1,0 +1,176 @@
+@import "tailwindcss";
+
+:root {
+  --background: #09090b;
+  --foreground: #fafafa;
+  --accent: #d4a853;
+  --accent-hover: #e0bb6e;
+  --accent-strong: #d9943a;
+  --muted: #71717a;
+  --card: #18181b;
+  --card-border: #27272a;
+  --bg: #0e0f13;
+  --bg-soft: #14161c;
+  --card-2: #20242e;
+  --border: #2b303c;
+  --text: #e9e7ee;
+  --green: #34d399;
+  --blue: #60a5fa;
+  --red: #f87171;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-muted: var(--muted);
+  --color-card: var(--card);
+  --color-card-border: var(--card-border);
+  --font-sans: var(--font-inter);
+  --font-display: var(--font-playfair);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--background);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--card-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+@keyframes pole-spin {
+  to {
+    background-position-x: 42px;
+  }
+}
+
+@keyframes pole-spin-v {
+  to {
+    background-position-y: 42px;
+  }
+}
+
+/* Fondo oscuro radial para páginas de reserva / admin */
+.booking-bg {
+  background:
+    radial-gradient(1200px 500px at 50% -200px, rgba(212, 168, 83, 0.12), transparent 60%),
+    var(--background);
+  min-height: 100svh;
+}
+
+input[type="date"],
+input[type="time"] {
+  color-scheme: dark;
+}
+
+/* Utilidades del sistema de reservas */
+.input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--text);
+  font: inherit;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.input-time {
+  flex: 0 1 84px;
+  min-width: 0;
+  padding: 8px 4px;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--text);
+}
+
+.input-time:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.input-time:disabled {
+  opacity: 0.5;
+}
+
+.btn-small-red {
+  padding: 6px 10px;
+  font-size: 12.5px;
+  font-weight: 700;
+  border-radius: 8px;
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  background: rgba(248, 113, 113, 0.12);
+  color: var(--red);
+}
+
+.btn-small-red:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.st {
+  font-size: 11.5px;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+
+.st.pending {
+  color: var(--accent);
+  background: rgba(212, 168, 83, 0.14);
+}
+.st.confirmed {
+  color: var(--blue);
+  background: rgba(96, 165, 250, 0.12);
+}
+.st.done {
+  color: var(--green);
+  background: rgba(52, 211, 153, 0.12);
+}
+.st.cancelled {
+  color: var(--muted);
+  background: rgba(154, 160, 173, 0.12);
+}
+
+.booking-cancelled {
+  opacity: 0.5;
+}
+
+@media (max-width: 640px) {
+  .booking-bg {
+    padding: 0;
+  }
+}
