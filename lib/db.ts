@@ -14,7 +14,7 @@ declare global {
     | undefined;
 }
 
-// Cache global para no reconectar en hot-reload / serverless
+// Global cache to avoid reconnecting on hot-reload / serverless
 globalThis.mongooseCache = globalThis.mongooseCache || {
   conn: null,
   promise: null,
