@@ -34,3 +34,18 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Operación de la barbería
+
+Copiá `.env.example` como `.env.local` y configurá `MONGODB_URI`, `ADMIN_SESSION_SECRET` y `NEXT_PUBLIC_SITE_URL`. Para una instalación nueva, `ADMIN_INITIAL_PIN` se usa solo en el primer acceso; después el PIN queda almacenado como hash.
+
+```bash
+npm run dev
+npm test
+npm run lint
+npm run build
+```
+
+`npm test` ejecuta un smoke test sin crear turnos. También acepta `BASE_URL` para verificar otro entorno. Después de publicar, comprobá `GET /api/health` y conservá backups de MongoDB con un procedimiento probado de restauración.
+
+No publiques secretos, cookies, PIN ni la URI de MongoDB en commits, logs o mensajes.
