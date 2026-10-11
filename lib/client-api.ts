@@ -8,7 +8,7 @@ export type Service = {
   duration: number;
 };
 
-export type Slot = { time: string; free: boolean };
+export type Slot = { time: string; free: boolean; ocupadas: number; sillas: number };
 
 export type AvailabilityData = {
   barberName: string;
@@ -28,6 +28,8 @@ export type BookingConfirmation = {
   date: string;
   time: string;
   status: string;
+  manageToken?: string;
+  address?: string;
 };
 
 export type AdminBooking = BookingConfirmation & { _id: string };
@@ -61,13 +63,15 @@ export type Settings = {
   services: Service[];
   days: { day: number; enabled: boolean; open: string; close: string }[];
   slotMinutes: number;
-  pin: string;
+  cantidadBarberos: number;
+  pin?: string;
   unavailableDates: string[];
 };
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     ...options,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...(options.headers || {}),
@@ -106,8 +110,34 @@ export function createBooking(payload: {
   return request("/bookings", { method: "POST", body: JSON.stringify(payload) });
 }
 
-export function adminLogin(pin: string): Promise<{ token: string }> {
+export function cancelBooking(token: string): Promise<BookingConfirmation> {
+  return request(`/bookings/manage/${encodeURIComponent(token)}`, { method: "DELETE" });
+}
+
+export function getManagedBooking(token: string): Promise<BookingConfirmation> {
+  return request(`/bookings/manage/${encodeURIComponent(token)}`);
+}
+
+export function updateBookingSchedule(
+  token: string,
+  payload: { service: string; date: string; time: string }
+): Promise<BookingConfirmation> {
+  return request(`/bookings/manage/${encodeURIComponent(token)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function adminLogin(pin: string): Promise<{ authenticated: boolean }> {
   return request("/admin/login", { method: "POST", body: JSON.stringify({ pin }) });
+}
+
+export function adminSession(): Promise<{ authenticated: boolean }> {
+  return request("/admin/session");
+}
+
+export function adminLogout(): Promise<{ authenticated: false }> {
+  return request("/admin/logout", { method: "POST" });
 }
 
 export function adminGetBookings(
@@ -118,9 +148,7 @@ export function adminGetBookings(
   if (params.date) query.set("date", params.date);
   if (params.status) query.set("status", params.status);
   const qs = query.toString();
-  return request(`/admin/bookings${qs ? `?${qs}` : ""}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  return request(`/admin/bookings${qs ? `?${qs}` : ""}`);
 }
 
 export function adminUpdateBooking(
@@ -130,7 +158,6 @@ export function adminUpdateBooking(
 ): Promise<AdminBooking> {
   return request(`/admin/bookings/${id}`, {
     method: "PATCH",
-    headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify({ status }),
   });
 }
@@ -141,14 +168,12 @@ export function adminDeleteBooking(
 ): Promise<{ ok: boolean }> {
   return request(`/admin/bookings/${id}`, {
     method: "DELETE",
-    headers: { Authorization: `Bearer ${token}` },
   });
 }
 
 export function adminGetSettings(token: string): Promise<Settings> {
-  return request("/admin/settings", {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  void token;
+  return request("/admin/settings");
 }
 
 export function adminUpdateSettings(
@@ -157,7 +182,6 @@ export function adminUpdateSettings(
 ): Promise<Settings> {
   return request("/admin/settings", {
     method: "PUT",
-    headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify(settings),
   });
 }
@@ -174,7 +198,7 @@ export async function adminUploadImage(
   if (folder) fd.append("folder", folder);
   const res = await fetch(`${BASE}/admin/upload`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
+    credentials: "include",
     body: fd,
   });
   const data = await res.json().catch(() => ({}));

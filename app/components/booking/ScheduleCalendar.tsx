@@ -125,6 +125,14 @@ export default function ScheduleCalendar({
           const isPast = ds < minDate;
           const isBeyond = ds > maxDate;
           const clickable = !isPast && !isBeyond && status === "free";
+          const statusLabel =
+            status === "free"
+              ? "con horarios disponibles"
+              : status === "full"
+                ? "completo"
+                : status === "closed"
+                  ? "sin atención"
+                  : "disponibilidad no cargada";
           const cls = [
             "relative aspect-square grid place-items-center rounded-[11px] border text-[14.5px] font-bold p-0",
             inMonth ? "" : "opacity-25",
@@ -148,6 +156,8 @@ export default function ScheduleCalendar({
               type="button"
               className={cls}
               disabled={!clickable}
+              aria-label={`${day} de ${MONTH_NAMES[display.m]} de ${display.y}, ${statusLabel}`}
+              aria-pressed={ds === value}
               onClick={() => onSelect(ds)}
             >
               {day}
@@ -159,12 +169,16 @@ export default function ScheduleCalendar({
         })}
       </div>
 
-      {loading && <p className="text-[var(--muted)] text-sm">Actualizando disponibilidad…</p>}
+      {loading && (
+        <p className="text-[var(--muted)] text-sm" role="status" aria-live="polite">
+          Actualizando disponibilidad…
+        </p>
+      )}
 
       <div className="flex flex-wrap gap-3.5 pt-0.5">
-        <Legend color="bg-emerald-400" label="Con turnos" />
+        <Legend color="bg-emerald-400" label="Disponible" />
         <Legend color="bg-red-400" label="Día lleno" />
-        <Legend color="bg-zinc-500" label="No se atiende" />
+        <Legend color="bg-zinc-500" label="No atendemos" />
       </div>
     </div>
   );

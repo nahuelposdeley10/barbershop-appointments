@@ -4,8 +4,11 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import {
   createBooking,
+  cancelBooking,
+  getManagedBooking,
   getAvailability,
   BookingConfirmation,
+  updateBookingSchedule,
   Service,
   Slot,
 } from "@/lib/client-api";
@@ -21,17 +24,22 @@ const MONTH_NAMES = [
 
 const HERO_IMG =
   "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?q=80&w=1400&auto=format&fit=crop";
+const BOOKING_STORAGE_KEY = "barberia:booking-token";
 
 function localDateStr(d: Date) {
-  const y = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${month}-${day}`;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
 function formatDate(dateStr: string) {
-  const d = new Date(`${dateStr}T00:00:00`);
-  return `${DAY_NAMES[d.getDay()]} ${d.getDate()} de ${MONTH_NAMES[d.getMonth()]}`;
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  return `${DAY_NAMES[d.getUTCDay()]} ${d.getUTCDate()} de ${MONTH_NAMES[d.getUTCMonth()]}`;
 }
 
 function currency(n: number) {
@@ -51,15 +59,20 @@ export default function BookingPage() {
   const [services, setServices] = useState<Service[]>([]);
   const [slots, setSlots] = useState<Slot[]>([]);
   const [selectedService, setSelectedService] = useState("");
-  const [date, setDate] = useState(today);
+  const [date, setDate] = useState("");
   const [selectedSlot, setSelectedSlot] = useState("");
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [confirm, setConfirm] = useState<BookingConfirmation | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelled, setCancelled] = useState(false);
 
   const freeCount = slots.filter((s) => s.free).length;
 
@@ -68,8 +81,31 @@ export default function BookingPage() {
   }, [barberName]);
 
   useEffect(() => {
+    let active = true;
+    async function restoreBooking() {
+      const raw = window.localStorage.getItem(BOOKING_STORAGE_KEY);
+      if (!raw) return;
+      try {
+        const stored = JSON.parse(raw) as { manageToken?: string };
+        if (!stored.manageToken) throw new Error("Token inválido");
+        const booking = await getManagedBooking(stored.manageToken);
+        if (!active) return;
+        setConfirm({ ...booking, manageToken: stored.manageToken });
+        setCancelled(booking.status === "cancelled");
+      } catch {
+        window.localStorage.removeItem(BOOKING_STORAGE_KEY);
+      }
+    }
+    void restoreBooking();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
-    getAvailability(date, selectedService)
+    const requestedDate = date || localDateStr(new Date());
+    getAvailability(requestedDate, selectedService)
       .then((data) => {
         if (cancelled) return;
         setBarberName(data.barberName);
@@ -77,9 +113,6 @@ export default function BookingPage() {
         setServices(data.services || []);
         setSlots(data.slots || []);
         setError("");
-        if (!selectedService && data.services && data.services.length) {
-          setSelectedService(data.services[0].name);
-        }
       })
       .catch((err) => {
         if (!cancelled) setError(err.message);
@@ -92,10 +125,65 @@ export default function BookingPage() {
     };
   }, [date, selectedService]);
 
+  async function refreshSlots() {
+    try {
+      const data = await getAvailability(date || today, selectedService);
+      setBarberName(data.barberName);
+      setMessage(data.message || "");
+      setServices(data.services || []);
+      setSlots(data.slots || []);
+      setError("");
+      return data;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error inesperado");
+      return null;
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!date || !selectedSlot) {
+      setError("Elegí una fecha y un horario antes de continuar");
+      return;
+    }
+    if (editing) {
+      if (!confirm?.manageToken) {
+        setError("No encontramos el acceso privado de este turno");
+        return;
+      }
+      setSubmitting(true);
+      setError("");
+      try {
+        const updated = await updateBookingSchedule(confirm.manageToken, {
+          service: selectedService,
+          date,
+          time: selectedSlot,
+        });
+        setConfirm({
+          ...updated,
+          manageToken: confirm.manageToken,
+          address: confirm.address,
+        });
+        setEditing(false);
+        setCancelled(false);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "No pudimos actualizar el turno";
+        setError(message);
+        if (/disponible|ocupado/.test(message)) {
+          setSelectedSlot("");
+          setStep(3);
+        }
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
     if (!name.trim() || phone.trim().length < 6) {
       setError("Ingresá tu nombre y un teléfono válido");
+      return;
+    }
+    if (!acceptedTerms) {
+      setError("Aceptá los términos de reserva para continuar");
       return;
     }
     setSubmitting(true);
@@ -109,41 +197,116 @@ export default function BookingPage() {
         time: selectedSlot,
       });
       setConfirm(booking);
+      if (booking.manageToken) {
+        window.localStorage.setItem(
+          BOOKING_STORAGE_KEY,
+          JSON.stringify({ manageToken: booking.manageToken })
+        );
+      }
+      await refreshSlots();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Error inesperado";
       setError(message);
-      if (/ocupado/.test(message)) setSelectedSlot("");
+      if (/ocupado/.test(message)) {
+        setSelectedSlot("");
+        setStep(3);
+      }
     } finally {
       setSubmitting(false);
     }
   }
 
   function resetForm() {
+    window.localStorage.removeItem(BOOKING_STORAGE_KEY);
     setConfirm(null);
+    setDate("");
     setSelectedSlot("");
+    setStep(1);
     setName("");
     setPhone("");
+    setAcceptedTerms(false);
+    setError("");
+    setCancelled(false);
+    setCancelling(false);
+    setEditing(false);
+  }
+
+  function startEditingBooking() {
+    if (!confirm?.manageToken || cancelled) return;
+    setEditing(true);
+    setSelectedService(confirm.service);
+    setDate("");
+    setSelectedSlot("");
+    setStep(2);
     setError("");
   }
 
-  if (confirm) {
+  async function handleCancelBooking() {
+    if (!confirm?.manageToken || cancelling) return;
+    if (!window.confirm("¿Querés cancelar este turno? Esta acción libera el horario.")) return;
+    setCancelling(true);
+    setError("");
+    try {
+      await cancelBooking(confirm.manageToken);
+      setCancelled(true);
+      setConfirm({ ...confirm, status: "cancelled" });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No pudimos cancelar el turno");
+    } finally {
+      setCancelling(false);
+    }
+  }
+
+  if (confirm && !editing) {
     return (
       <div className="booking-bg">
         <div className="max-w-[720px] mx-auto px-4 py-10">
           <div className="flex flex-col items-center text-center gap-4 bg-[var(--card)] border border-[var(--border)] rounded-2xl p-8 mt-[10vh]">
-            <div className="w-14 h-14 rounded-full bg-emerald-500/15 text-emerald-400 text-[28px] grid place-items-center">
-              ✓
+            <div className={`w-14 h-14 rounded-full text-[28px] grid place-items-center ${cancelled ? "bg-red-500/15 text-red-400" : "bg-emerald-500/15 text-emerald-400"}`}>
+              {cancelled ? "×" : "✓"}
             </div>
-            <h1 className="text-3xl font-bold">¡Turno reservado!</h1>
+            <h1 className="text-3xl font-bold">{cancelled ? "Turno cancelado" : "¡Solicitud recibida!"}</h1>
             <p className="text-[var(--muted)]">{barberName}</p>
+            {!cancelled && (
+              <p className="text-sm text-[var(--muted)] bg-[var(--bg-soft)] border border-[var(--border)] rounded-xl px-4 py-3">
+                Tu solicitud quedó registrada. El local puede confirmarte el turno si necesita validar disponibilidad.
+              </p>
+            )}
             <ul className="w-full flex flex-col list-none m-0 p-0">
               <ConfirmRow label="Servicio" value={confirm.service} />
               <ConfirmRow label="Fecha" value={formatDate(confirm.date)} />
               <ConfirmRow label="Hora" value={confirm.time} />
               <ConfirmRow label="Nombre" value={confirm.name} />
               <ConfirmRow label="Teléfono" value={confirm.phone} />
-              <ConfirmRow label="Dirección" value="Te esperamos en el local" />
+              <ConfirmRow label="Dirección" value={confirm.address || "Te esperamos en el local"} />
             </ul>
+            {!cancelled && (
+              <div className="w-full flex flex-col gap-2.5">
+                <p className="text-sm text-[var(--muted)]">
+                  Guardá esta pantalla. Podés editar el horario o cancelar el turno desde acá.
+                </p>
+                {confirm.manageToken && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={startEditingBooking}
+                      className="w-full px-5 py-3 rounded-xl font-bold text-center bg-[var(--card-2)] text-[var(--text)] border border-[var(--border)] hover:border-[var(--accent)]"
+                    >
+                      Editar horario
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancelBooking}
+                      disabled={cancelling}
+                      className="w-full px-5 py-3 rounded-xl font-bold text-center text-red-300 border border-red-500/30 disabled:opacity-60"
+                    >
+                      {cancelling ? "Cancelando…" : "Cancelar turno"}
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+            {error && <p role="alert" className="w-full text-sm text-[var(--red)] font-semibold">{error}</p>}
             <button
               type="button"
               onClick={resetForm}
@@ -160,10 +323,10 @@ export default function BookingPage() {
   return (
     <div className="booking-bg">
       <Navbar nombre={barberName} />
-      <div className="flex flex-col gap-5 max-w-[720px] w-full mx-auto pt-24 px-5 pb-16">
+      <div className="flex flex-col gap-4 sm:gap-5 max-w-[720px] w-full mx-auto pt-20 sm:pt-24 px-3.5 sm:px-5 pb-12 sm:pb-16">
 
         {/* Hero */}
-        <section className="relative h-[270px] rounded-[20px] overflow-hidden border border-[var(--border)]">
+        <section className="relative h-[215px] sm:h-[270px] rounded-[18px] sm:rounded-[20px] overflow-hidden border border-[var(--border)]">
           <Image
             src={HERO_IMG}
             alt=""
@@ -174,64 +337,95 @@ export default function BookingPage() {
           />
           <div className="absolute inset-0 bg-gradient-to-b from-zinc-950/55 via-transparent to-background" />
           <div className="absolute inset-0 bg-gradient-to-r from-zinc-950/75 to-transparent" />
-          <div className="relative h-full flex flex-col justify-center items-center gap-3 p-6 text-center">
-            <span className="text-[11px] font-extrabold tracking-[4px] uppercase text-accent bg-zinc-950/55 border border-accent/40 px-2.5 py-1 rounded-full">
+          <div className="relative h-full flex flex-col justify-center items-center gap-2.5 sm:gap-3 p-5 sm:p-6 text-center">
+            <span className="text-[10px] sm:text-[11px] font-extrabold tracking-[3px] sm:tracking-[4px] uppercase text-accent bg-zinc-950/55 border border-accent/40 px-2.5 py-1 rounded-full">
               Barbershop
             </span>
-            <BarberPole className="w-56 h-[9px] shadow-[0_4px_20px_rgba(0,0,0,0.45)]" />
-            <h1 className="text-[34px] leading-tight font-bold tracking-[-0.5px] text-white drop-shadow-lg">
+            <BarberPole className="w-40 sm:w-56 h-[8px] sm:h-[9px] shadow-[0_4px_20px_rgba(0,0,0,0.45)]" />
+            <h1 className="text-[29px] sm:text-[34px] leading-tight font-bold tracking-[-0.5px] text-white drop-shadow-lg">
               Reservá tu turno
             </h1>
-            <p className="text-[#e7e2d8] drop-shadow text-sm">{message}</p>
+            <p className="text-[#e7e2d8] drop-shadow text-[13px] sm:text-sm">{message}</p>
           </div>
         </section>
 
         {/* Features */}
-        <div className="flex flex-wrap justify-center gap-2">
-          {["Sin esperas", "Confirmación al instante", "Agenda 100% online"].map(
+        <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+          {["Sin esperas", "Confirmación rápida", "Agenda online"].map(
             (f) => (
-              <span key={f} className="text-[13px] font-bold text-[var(--text)] bg-[var(--card)] border border-[var(--border)] rounded-full px-3.5 py-1.5">
+              <span key={f} className="min-h-10 flex items-center justify-center text-center leading-tight text-[10.5px] sm:text-[13px] font-bold text-[var(--text)] bg-[var(--card)] border border-[var(--border)] rounded-xl sm:rounded-full px-1.5 sm:px-3.5 py-1.5">
                 ✓ {f}
               </span>
             )
           )}
         </div>
 
-        {/* Paso 1: Servicio */}
-        <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-[22px] flex flex-col gap-3.5">
-          <h2 className="text-[17px] font-bold">
-            <Step n={1} /> Elegí el servicio
-          </h2>
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-2.5">
+        <BookingProgress step={step} />
+
+        {/* Step 1: Service */}
+        {step === 1 && <section className="bg-[var(--card)] border border-[var(--accent)] rounded-[22px] sm:rounded-2xl p-4 sm:p-[22px] flex flex-col gap-3.5 sm:gap-4 shadow-[0_18px_60px_rgba(0,0,0,0.18)]">
+          <div className="flex items-start gap-3">
+            <Step n={1} />
+            <div className="min-w-0">
+              <p className="text-[10px] font-extrabold tracking-[2px] uppercase text-accent mb-1">Paso 1 de 4</p>
+              <h2 className="text-[23px] sm:text-[26px] leading-tight font-bold tracking-[-0.3px]">
+                Elegí tu próximo look
+              </h2>
+              <p className="text-[var(--muted)] text-sm mt-1">
+                Seleccioná un servicio para ver los horarios disponibles.
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             {services.map((s) => (
               <button
                 key={s.name}
                 type="button"
                 onClick={() => {
                   setSelectedService(s.name);
+                  setDate("");
                   setSelectedSlot("");
+                  setStep(2);
+                  setLoading(true);
                 }}
-                className={`text-left bg-[var(--card-2)] border rounded-[14px] p-3.5 flex flex-col gap-1 text-[var(--text)] transition-colors ${
+                className={`group w-full min-h-[92px] text-left bg-[var(--card-2)] border rounded-[17px] p-3.5 flex items-center gap-3 text-[var(--text)] transition-all active:scale-[0.99] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
                   selectedService === s.name
-                    ? "border-[var(--accent)] bg-accent/15"
-                    : "border-[var(--border)] hover:border-[var(--accent)]"
+                    ? "border-[var(--accent)] bg-accent/15 shadow-[0_8px_24px_rgba(212,168,83,0.12)]"
+                    : "border-[var(--border)] hover:border-[var(--accent)] hover:bg-[var(--card)]"
                 }`}
               >
                 <ServiceIcon service={s.name} />
-                <strong>{s.name}</strong>
-                <span className={`text-[13.5px] ${selectedService === s.name ? "text-accent" : "text-[var(--muted)]"}`}>
-                  {currency(s.price)} · {s.duration} min
+                <span className="min-w-0 flex-1">
+                  <strong className="block truncate text-[15px] sm:text-base">{s.name}</strong>
+                  <span className="block mt-1 text-[12.5px] text-[var(--muted)]">
+                    {s.duration} min · {currency(s.price)}
+                  </span>
                 </span>
+                <span aria-hidden="true" className="text-xl text-[var(--muted)] transition-transform group-hover:translate-x-0.5 group-hover:text-accent">›</span>
               </button>
             ))}
           </div>
-        </section>
+          {loading && services.length === 0 && (
+            <p className="text-[var(--muted)] bg-[var(--bg-soft)] rounded-xl p-4 text-center">
+              Cargando servicios…
+            </p>
+          )}
+          {error && services.length === 0 && (
+            <p role="alert" className="text-[var(--red)] font-semibold">
+              {error}
+            </p>
+          )}
+        </section>}
 
-        {/* Paso 2: Día */}
-        <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-[22px] flex flex-col gap-3.5">
+        {/* Step 2: Day */}
+        {step === 2 && <section className="bg-[var(--card)] border border-[var(--accent)] rounded-[22px] sm:rounded-2xl p-4 sm:p-[22px] flex flex-col gap-3.5 sm:gap-4 shadow-[0_18px_60px_rgba(0,0,0,0.18)]">
           <h2 className="text-[17px] font-bold">
-            <Step n={2} /> Elegí el día
+            <Step n={2} /> {editing ? "¿Qué nuevo día te queda cómodo?" : "¿Qué día te queda cómodo?"}
           </h2>
+          <p className="text-[var(--muted)] text-sm">
+            {selectedService} · Primero elegí la fecha y después te mostramos los horarios.
+          </p>
+          {error && <p role="alert" className="text-[var(--red)] font-semibold">{error}</p>}
           <div className="mt-1">
             <ScheduleCalendar
               value={date}
@@ -241,23 +435,36 @@ export default function BookingPage() {
               onSelect={(d) => {
                 setDate(d);
                 setSelectedSlot("");
+                setStep(3);
+                setError("");
+                setLoading(true);
               }}
             />
           </div>
-        </section>
+          <WizardBackButton
+            label={editing ? "Volver al turno" : "Cambiar servicio"}
+            onClick={() => {
+              if (editing) {
+                setEditing(false);
+                setDate("");
+                setSelectedSlot("");
+                setStep(1);
+                return;
+              }
+              setDate("");
+              setSelectedSlot("");
+              setStep(1);
+            }}
+          />
+        </section>}
 
-        {/* Paso 3: Hora */}
-        <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-[22px] flex flex-col gap-3.5">
+        {/* Step 3: Time */}
+        {step === 3 && date && <section className="bg-[var(--card)] border border-[var(--accent)] rounded-[22px] sm:rounded-2xl p-4 sm:p-[22px] flex flex-col gap-3.5 sm:gap-4 shadow-[0_18px_60px_rgba(0,0,0,0.18)]">
           <h2 className="text-[17px] font-bold">
-            <Step n={3} /> Elegí la hora
+            <Step n={3} /> Elegí un horario
           </h2>
-          {error && !selectedSlot ? (
-            <p className="text-[var(--red)] font-semibold">{error}</p>
-          ) : (
-            <p className="text-[var(--muted)]">
-              {formatDate(date)} · {selectedService || "servicio"}
-            </p>
-          )}
+          <SelectionSummary service={selectedService} date={formatDate(date)} />
+          {error && <p role="alert" className="text-[var(--red)] font-semibold">{error}</p>}
           {loading ? (
             <p className="text-[var(--muted)]">Cargando horarios…</p>
           ) : slots.length === 0 ? (
@@ -273,26 +480,74 @@ export default function BookingPage() {
               )}
               <div className="grid grid-cols-[repeat(auto-fill,minmax(84px,1fr))] gap-2">
                 {slots.map((slot) => {
-                  let cls =
-                    "py-2.5 rounded-xl border font-bold text-sm ";
-                  if (slot.free) {
-                    cls += selectedSlot === slot.time
-                      ? "bg-gradient-to-b from-[var(--accent)] to-[var(--accent-strong)] text-[#1a1406] border-transparent"
-                      : "bg-emerald-500/14 text-emerald-400 border-emerald-500/45 hover:bg-emerald-500/28";
-                  } else {
-                    cls += "bg-red-500/12 text-red-300 border-red-500/38 line-through cursor-default";
+                  const lleno = !slot.free;
+                  const parcial = slot.free && slot.ocupadas > 0;
+                  if (selectedSlot === slot.time && slot.free) {
+                    return (
+                      <button
+                        key={slot.time}
+                        type="button"
+                        className="py-2.5 rounded-xl border font-bold text-sm bg-gradient-to-b from-[var(--accent)] to-[var(--accent-strong)] text-[#1a1406] border-transparent"
+                        onClick={() => {
+                          setSelectedSlot(slot.time);
+                          setStep(4);
+                          setError("");
+                        }}
+                      >
+                        {slot.time}
+                      </button>
+                    );
+                  }
+                  if (lleno) {
+                    return (
+                      <button
+                        key={slot.time}
+                        type="button"
+                        disabled
+                        className="py-2.5 rounded-xl border font-bold text-sm bg-red-500/12 text-red-300 border-red-500/38 line-through cursor-default"
+                      >
+                        {slot.time}
+                      </button>
+                    );
+                  }
+                  if (parcial) {
+                    const librePct = Math.round(
+                      ((slot.sillas - slot.ocupadas) / slot.sillas) * 100
+                    );
+                    return (
+                      <button
+                        key={slot.time}
+                        type="button"
+                        className="relative overflow-hidden rounded-xl border font-bold text-sm text-[#1a1406] border-emerald-500/50"
+                        onClick={() => {
+                          setSelectedSlot(slot.time);
+                          setStep(4);
+                          setError("");
+                        }}
+                      >
+                        <span
+                          className="absolute inset-y-0 right-0 bg-emerald-500/30"
+                          style={{ width: `${librePct}%` }}
+                        />
+                        <span
+                          className="absolute inset-y-0 left-0 bg-red-500/30"
+                          style={{ width: `${100 - librePct}%` }}
+                        />
+                        <span className="relative z-10 block py-2.5 text-center">
+                          {slot.time}
+                        </span>
+                      </button>
+                    );
                   }
                   return (
                     <button
                       key={slot.time}
                       type="button"
-                      className={cls}
-                      disabled={!slot.free}
+                      className="py-2.5 rounded-xl border font-bold text-sm bg-emerald-500/14 text-emerald-400 border-emerald-500/45 hover:bg-emerald-500/28"
                       onClick={() => {
                         setSelectedSlot(slot.time);
+                        setStep(4);
                         setError("");
-                        setPhone("");
-                        setName("");
                       }}
                     >
                       {slot.time}
@@ -307,56 +562,80 @@ export default function BookingPage() {
                 <span className="inline-flex items-center gap-1.5 text-[12.5px] text-[var(--muted)]">
                   <i className="w-2.5 h-2.5 rounded-full bg-red-400" /> Ocupado
                 </span>
+                <span className="inline-flex items-center gap-1.5 text-[12.5px] text-[var(--muted)]">
+                  <i className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-red-400 to-emerald-400" /> Medio ocupado
+                </span>
               </div>
             </>
           )}
-        </section>
+          <WizardBackButton
+            label="Cambiar fecha"
+            onClick={() => {
+              setStep(2);
+              setSelectedSlot("");
+            }}
+          />
+        </section>}
 
-        {/* Paso 4: Datos */}
-        {selectedSlot && (
-          <section className="bg-[var(--card)] border border-[var(--accent)] rounded-2xl p-[22px] flex flex-col gap-3.5">
+        {/* Step 4: Info */}
+        {step === 4 && selectedSlot && (
+          <section className="bg-[var(--card)] border border-[var(--accent)] rounded-[22px] sm:rounded-2xl p-4 sm:p-[22px] flex flex-col gap-3.5 sm:gap-4 shadow-[0_18px_60px_rgba(0,0,0,0.18)]">
             <h2 className="text-[17px] font-bold">
-              <Step n={4} /> Tus datos
+              <Step n={4} /> {editing ? "Confirmá el nuevo horario" : "Confirmá tus datos"}
             </h2>
-            <p className="text-[var(--muted)]">
-              {selectedService} · {formatDate(date)} a las{" "}
-              <strong className="text-[var(--text)]">{selectedSlot} h</strong>
-            </p>
-            {error && <p className="text-[var(--red)] font-semibold">{error}</p>}
+            <SelectionSummary service={selectedService} date={`${formatDate(date)} · ${selectedSlot} h`} />
+            {error && <p role="alert" className="text-[var(--red)] font-semibold">{error}</p>}
             <form className="flex flex-col gap-3.5" onSubmit={handleSubmit}>
-              <Field label="Nombre">
-                <input
-                  className="w-full px-3.5 py-3 rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] text-[var(--text)]"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Tu nombre"
-                  autoComplete="name"
-                />
-              </Field>
-              <Field label="Teléfono / WhatsApp">
-                <input
-                  className="w-full px-3.5 py-3 rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] text-[var(--text)]"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="Ej: 1155667788"
-                  inputMode="tel"
-                  autoComplete="tel"
-                />
-              </Field>
-              <div className="flex justify-between gap-2.5">
+              {!editing && (
+                <>
+                  <Field label="Nombre">
+                    <input
+                      className="w-full px-3.5 py-3 rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] text-[var(--text)]"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="Tu nombre"
+                      autoComplete="name"
+                    />
+                  </Field>
+                  <Field label="Teléfono / WhatsApp">
+                    <input
+                      className="w-full px-3.5 py-3 rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] text-[var(--text)]"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="Ej: 1155667788"
+                      inputMode="tel"
+                      autoComplete="tel"
+                    />
+                  </Field>
+                  <label className="flex items-start gap-2.5 text-sm text-[var(--muted)] leading-5">
+                    <input
+                      type="checkbox"
+                      checked={acceptedTerms}
+                      onChange={(event) => setAcceptedTerms(event.target.checked)}
+                      className="mt-1 accent-[var(--accent)]"
+                    />
+                    <span>
+                      Acepto los <a href="/terminos" target="_blank" rel="noreferrer" className="text-accent underline">términos de reserva</a> y la <a href="/privacidad" target="_blank" rel="noreferrer" className="text-accent underline">política de privacidad</a>.
+                    </span>
+                  </label>
+                </>
+              )}
+              <div className="grid grid-cols-1 sm:flex sm:justify-between gap-2.5">
                 <button
                   type="button"
-                  className="px-4 py-3 rounded-xl bg-[var(--card-2)] border border-[var(--border)] font-bold text-[var(--text)] hover:border-[var(--accent)]"
-                  onClick={() => setSelectedSlot("")}
+                  className="w-full sm:w-auto px-4 py-3 rounded-xl bg-[var(--card-2)] border border-[var(--border)] font-bold text-[var(--text)] hover:border-[var(--accent)]"
+                  onClick={() => {
+                    setStep(3);
+                  }}
                 >
-                  Volver
+                  Cambiar horario
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-5 py-3 rounded-xl font-bold bg-gradient-to-b from-[var(--accent)] to-[var(--accent-strong)] text-[#1a1406] disabled:opacity-60"
+                  className="w-full sm:w-auto px-5 py-3 rounded-xl font-bold bg-gradient-to-b from-[var(--accent)] to-[var(--accent-strong)] text-[#1a1406] disabled:opacity-60"
                 >
-                  {submitting ? "Reservando…" : "Confirmar turno"}
+                  {submitting ? (editing ? "Guardando…" : "Reservando…") : editing ? "Guardar nuevo horario" : "Confirmar turno"}
                 </button>
               </div>
             </form>
@@ -364,6 +643,66 @@ export default function BookingPage() {
         )}
       </div>
     </div>
+  );
+}
+
+function BookingProgress({ step }: { step: 1 | 2 | 3 | 4 }) {
+  const items = [
+    { n: 1, label: "Servicio" },
+    { n: 2, label: "Fecha" },
+    { n: 3, label: "Horario" },
+    { n: 4, label: "Datos" },
+  ] as const;
+
+  return (
+    <nav aria-label="Progreso de la reserva" className="w-full rounded-2xl border border-[var(--border)] bg-[var(--card)]/70 px-2.5 py-3 sm:px-5">
+      <div className="relative grid grid-cols-4 gap-1">
+        <span aria-hidden="true" className="absolute left-[12%] right-[12%] top-3 h-px bg-[var(--border)]" />
+        {items.map((item) => (
+          <div key={item.n} className="relative z-10 flex min-w-0 flex-col items-center gap-1.5 text-center">
+          <span
+            aria-current={item.n === step ? "step" : undefined}
+            className={`inline-grid place-items-center w-6 h-6 rounded-full border text-[11px] font-extrabold bg-[var(--card)] ${
+              item.n === step
+                ? "border-[var(--accent)] text-[var(--accent)] shadow-[0_0_0_4px_rgba(212,168,83,0.10)]"
+                : item.n < step
+                  ? "border-emerald-400 text-emerald-400"
+                  : "border-[var(--border)] text-[var(--muted)]"
+            }`}
+          >
+            {item.n < step ? "✓" : item.n}
+          </span>
+          <span className={`text-[10px] sm:text-[12px] font-bold truncate max-w-full ${item.n === step ? "text-[var(--text)]" : "text-[var(--muted)]"}`}>
+            {item.label}
+          </span>
+        </div>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
+function SelectionSummary({ service, date }: { service: string; date: string }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--muted)]">
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--bg-soft)] border border-[var(--border)] px-3 py-1.5">
+        <strong className="text-[var(--text)]">{service}</strong>
+      </span>
+      <span className="text-[var(--muted)]">·</span>
+      <span>{date}</span>
+    </div>
+  );
+}
+
+function WizardBackButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className="self-start text-sm font-bold text-[var(--muted)] hover:text-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+      onClick={onClick}
+    >
+      ← {label}
+    </button>
   );
 }
 
