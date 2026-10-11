@@ -4,17 +4,24 @@ import {
   getSettings,
   normalizeDate,
   localDateStr,
+  localMinutes,
   toMinutes,
   slotsBetween,
   overlaps,
+  weekdayForDate,
+  addDays,
 } from "@/lib/booking-logic";
 import { Booking } from "@/lib/models/Booking";
+import { rateLimited } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
+    if (rateLimited(req, "month-availability", 60, 60 * 1000)) {
+      return Response.json({ error: "Demasiadas consultas. Intentá nuevamente." }, { status: 429 });
+    }
     await connectDB();
     const search = req.nextUrl.searchParams;
     const from = normalizeDate(search.get("from") || "");
@@ -28,9 +35,7 @@ export async function GET(req: NextRequest) {
     const duration = service ? service.duration : settings.slotMinutes;
     const today = localDateStr(new Date());
 
-    const toDate = new Date(`${from}T00:00:00`);
-    toDate.setDate(toDate.getDate() + 41);
-    const to = localDateStr(toDate);
+    const to = addDays(from, 41);
 
     const openings = await Booking.find({
       date: { $gte: from, $lte: to },
@@ -45,25 +50,25 @@ export async function GET(req: NextRequest) {
     }
 
     const days: { date: string; status: string }[] = [];
-    const cursor = new Date(`${from}T00:00:00`);
     for (let i = 0; i < 42; i++) {
-      const date = localDateStr(cursor);
+      const date = addDays(from, i);
       let status: string;
       if (date < today) {
         status = "past";
       } else {
-        const weekday = cursor.getDay();
+        const weekday = weekdayForDate(date);
         const dayCfg = settings.days.find((x) => x.day === weekday);
         const blocked = settings.unavailableDates.includes(date);
         if (!dayCfg || !dayCfg.enabled || blocked) {
           status = "closed";
         } else {
           const now = new Date();
-          const nowMinutes = now.getHours() * 60 + now.getMinutes();
+          const nowMinutes = localMinutes(now);
           const isToday = date === today;
           if (isToday && nowMinutes >= toMinutes(dayCfg.close)) {
             status = "closed";
           } else {
+            const sillas = Math.max(1, settings.cantidadBarberos || 1);
             const dayBookings = byDate[date] || [];
             const free = slotsBetween(
               dayCfg.open,
@@ -72,16 +77,16 @@ export async function GET(req: NextRequest) {
             ).some((time) => {
               const start = toMinutes(time);
               if (isToday && start <= nowMinutes) return false;
-              return !dayBookings.some((b) =>
+              const ocupadas = dayBookings.filter((b) =>
                 overlaps(start, duration, toMinutes(b.time), b.duration)
-              );
+              ).length;
+              return ocupadas < sillas;
             });
             status = free ? "free" : "full";
           }
         }
       }
       days.push({ date, status });
-      cursor.setDate(cursor.getDate() + 1);
     }
 
     return Response.json({ days });

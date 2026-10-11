@@ -62,7 +62,10 @@ const settingSchema = new mongoose.Schema({
   services: { type: [serviceSchema], default: [] },
   days: { type: [daySchema], default: [] },
   slotMinutes: { type: Number, default: 30 },
-  pin: { type: String, default: "1234" },
+  cantidadBarberos: { type: Number, default: 1, min: 1 },
+  // Legacy field kept only long enough to migrate existing installations.
+  pin: { type: String, default: "", select: false },
+  pinHash: { type: String, default: "", select: false },
   unavailableDates: { type: [String], default: [] },
 });
 
@@ -111,7 +114,9 @@ export type SettingsDoc = {
   services: ServiceSetting[];
   days: DaySetting[];
   slotMinutes: number;
-  pin: string;
+  cantidadBarberos: number;
+  pin?: string;
+  pinHash?: string;
   unavailableDates: string[];
 };
 

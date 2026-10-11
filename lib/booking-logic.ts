@@ -39,13 +39,14 @@ export function defaultSettings() {
     ],
     days,
     slotMinutes: 30,
-    pin: "1234",
+    cantidadBarberos: 1,
+    pin: "",
     unavailableDates: [],
   };
 }
 
 export async function getSettings() {
-  let doc = await Setting.findOne();
+  let doc = await Setting.findOne().select("+pin +pinHash");
   if (!doc) {
     doc = await Setting.create(defaultSettings());
   } else {
@@ -67,28 +68,63 @@ export function normalizeDate(date: string): string | null {
   if (typeof date !== "string") return null;
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
   if (!m) return null;
-  const d = new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00`);
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
   if (
     Number.isNaN(d.getTime()) ||
-    d.getFullYear() !== +m[1] ||
-    d.getMonth() !== +m[2] - 1 ||
-    d.getDate() !== +m[3]
+    d.getUTCFullYear() !== +m[1] ||
+    d.getUTCMonth() !== +m[2] - 1 ||
+    d.getUTCDate() !== +m[3]
   ) {
     return null;
   }
   return date;
 }
 
+const BARBER_TIME_ZONE = process.env.BARBER_TIME_ZONE || "America/Argentina/Buenos_Aires";
+
+function zonedParts(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: BARBER_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  return Object.fromEntries(parts.map((part) => [part.type, part.value]));
+}
+
 export function localDateStr(date: Date): string {
-  const y = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${y}-${month}-${day}`;
+  const parts = zonedParts(date);
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+export function localMinutes(date: Date): number {
+  const parts = zonedParts(date);
+  return Number(parts.hour) * 60 + Number(parts.minute);
+}
+
+export function weekdayForDate(date: string): number {
+  const [year, month, day] = date.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+}
+
+export function addDays(date: string, amount: number): string {
+  const [year, month, day] = date.split("-").map(Number);
+  const next = new Date(Date.UTC(year, month - 1, day + amount));
+  return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}-${String(next.getUTCDate()).padStart(2, "0")}`;
 }
 
 export function toMinutes(t: string): number {
   const [h, m] = t.split(":").map(Number);
   return h * 60 + m;
+}
+
+export function isValidTime(t: string): boolean {
+  if (!/^\d{2}:\d{2}$/.test(t)) return false;
+  const minutes = toMinutes(t);
+  return minutes >= 0 && minutes < 24 * 60 && minutes % 1 === 0;
 }
 
 export function toTime(totalMinutes: number): string {
@@ -121,7 +157,8 @@ export function overlaps(
 export function checkToken(header: string | null): boolean {
   const value = header || "";
   const token = value.startsWith("Bearer ") ? value.slice(7) : "";
-  return token === (process.env.ADMIN_TOKEN || "turno-admin-token");
+  const configuredToken = process.env.ADMIN_TOKEN?.trim();
+  return Boolean(configuredToken && configuredToken.length >= 32 && token === configuredToken);
 }
 
 /* ── Types ────────────────────────────────── */
