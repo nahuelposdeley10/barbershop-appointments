@@ -6,7 +6,8 @@ import { BarberPole } from "../booking/BarberIcons";
 import Navbar from "../Navbar";
 
 export default function AdminLogin({ onLogin }: { onLogin: () => void }) {
-  const [pin, setPin] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -15,7 +16,7 @@ export default function AdminLogin({ onLogin }: { onLogin: () => void }) {
     setLoading(true);
     setError("");
     try {
-      await adminLogin(pin.trim());
+      await adminLogin(email.trim(), password);
       onLogin();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error inesperado");
@@ -43,19 +44,31 @@ export default function AdminLogin({ onLogin }: { onLogin: () => void }) {
             <BarberPole />
             <h1 className="text-[26px] font-bold">Panel del barbero</h1>
             <p className="text-[var(--muted)]">
-              Ingresá tu PIN para administrar los turnos.
+              Ingresá con tu email y contraseña para administrar los turnos.
             </p>
             {error && <p className="text-[var(--red)] font-semibold">{error}</p>}
             <form className="flex flex-col gap-3.5 w-full" onSubmit={handleSubmit}>
               <label className="flex flex-col gap-1.5 font-semibold text-sm">
-                <span>PIN</span>
+                <span>Email</span>
+                <input
+                  type="email"
+                  className="w-full px-3.5 py-3 rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] text-[var(--text)]"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="admin@tubarberia.com"
+                  autoComplete="username"
+                  autoFocus
+                />
+              </label>
+              <label className="flex flex-col gap-1.5 font-semibold text-sm">
+                <span>Contraseña</span>
                 <input
                   type="password"
-                  className="w-full max-w-[240px] px-3.5 py-3 rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] text-[var(--text)] text-center text-xl tracking-[6px]"
-                  value={pin}
-                  onChange={(e) => setPin(e.target.value)}
-                  placeholder="••••"
-                  autoFocus
+                  className="w-full px-3.5 py-3 rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] text-[var(--text)]"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Tu contraseña"
+                  autoComplete="current-password"
                 />
               </label>
               <button

@@ -64,7 +64,8 @@ export type Settings = {
   days: { day: number; enabled: boolean; open: string; close: string }[];
   slotMinutes: number;
   cantidadBarberos: number;
-  pin?: string;
+  adminEmail: string;
+  adminPassword?: string;
   unavailableDates: string[];
 };
 
@@ -128,8 +129,11 @@ export function updateBookingSchedule(
   });
 }
 
-export function adminLogin(pin: string): Promise<{ authenticated: boolean }> {
-  return request("/admin/login", { method: "POST", body: JSON.stringify({ pin }) });
+export function adminLogin(email: string, password: string): Promise<{ authenticated: boolean }> {
+  return request("/admin/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
 }
 
 export function adminSession(): Promise<{ authenticated: boolean }> {

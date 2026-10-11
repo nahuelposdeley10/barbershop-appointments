@@ -1,9 +1,8 @@
 import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
-import { defaultSettings } from "@/lib/booking-logic";
+import { AdminUser } from "@/lib/models/AdminUser";
 import { AdminSession } from "@/lib/models/AdminSession";
-import { Setting } from "@/lib/models/Setting";
 
 export const ADMIN_SESSION_COOKIE = "barber_admin_session";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
@@ -26,16 +25,16 @@ function hashToken(token: string) {
   return crypto.createHmac("sha256", sessionSecret()).update(token).digest("hex");
 }
 
-function hashPin(pin: string) {
+function hashPassword(password: string) {
   const salt = crypto.randomBytes(16).toString("hex");
-  const digest = crypto.scryptSync(pin, salt, 64).toString("hex");
+  const digest = crypto.scryptSync(password, salt, 64).toString("hex");
   return `${salt}:${digest}`;
 }
 
-function verifyPinHash(pin: string, stored: string) {
+function verifyPasswordHash(password: string, stored: string) {
   const [salt, expected] = stored.split(":");
   if (!salt || !expected || expected.length !== 128) return false;
-  const actual = crypto.scryptSync(pin, salt, 64).toString("hex");
+  const actual = crypto.scryptSync(password, salt, 64).toString("hex");
   return crypto.timingSafeEqual(Buffer.from(actual, "hex"), Buffer.from(expected, "hex"));
 }
 
@@ -45,46 +44,66 @@ function safeEqual(left: string, right: string) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-async function authSettings() {
-  let settings = await Setting.findOne().select("+pin +pinHash");
-  if (!settings) {
-    settings = await Setting.create(defaultSettings());
-  }
-  return settings as typeof settings & { pin?: string; pinHash?: string };
+function normalizeEmail(email: string) {
+  return typeof email === "string" ? email.trim().toLowerCase() : "";
 }
 
-export async function verifyAdminPin(pin: string) {
-  const cleanPin = typeof pin === "string" ? pin.trim() : "";
-  if (cleanPin.length < 4 || cleanPin.length > 64) return false;
-
-  const settings = await authSettings();
-  let valid = false;
-  if (settings.pinHash) {
-    valid = verifyPinHash(cleanPin, settings.pinHash);
-  } else if (settings.pin) {
-    // Migración única del formato antiguo: nunca se vuelve a guardar en claro.
-    valid = safeEqual(cleanPin, settings.pin);
-  } else if (process.env.ADMIN_INITIAL_PIN) {
-    valid = safeEqual(cleanPin, process.env.ADMIN_INITIAL_PIN.trim());
-  }
-
-  if (valid && !settings.pinHash) {
-    settings.set("pinHash", hashPin(cleanPin));
-    settings.set("pin", undefined);
-    await settings.save();
-  }
-  return valid;
+function validEmail(email: string) {
+  return email.length >= 5 && email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-export async function setAdminPin(pin: string) {
-  const cleanPin = typeof pin === "string" ? pin.trim() : "";
-  if (cleanPin.length < 4 || cleanPin.length > 64) {
-    throw new Error("El PIN debe tener entre 4 y 64 caracteres");
+export async function verifyAdminCredentials(email: string, password: string) {
+  const cleanEmail = normalizeEmail(email);
+  const cleanPassword = typeof password === "string" ? password : "";
+  if (!validEmail(cleanEmail) || cleanPassword.length < 8 || cleanPassword.length > 128) return false;
+
+  await connectDB();
+  const user = await AdminUser.findOne().select("+passwordHash");
+  if (user) {
+    return user.email === cleanEmail && verifyPasswordHash(cleanPassword, user.passwordHash);
   }
-  const settings = await authSettings();
-  settings.set("pinHash", hashPin(cleanPin));
-  settings.set("pin", undefined);
-  await settings.save();
+
+  const initialEmail = normalizeEmail(process.env.ADMIN_INITIAL_EMAIL || "");
+  const initialPassword = process.env.ADMIN_INITIAL_PASSWORD || "";
+  if (
+    !validEmail(initialEmail) ||
+    !safeEqual(cleanEmail, initialEmail) ||
+    !safeEqual(cleanPassword, initialPassword)
+  ) {
+    return false;
+  }
+
+  await AdminUser.create({ email: cleanEmail, passwordHash: hashPassword(cleanPassword) });
+  return true;
+}
+
+export async function getAdminAccount() {
+  await connectDB();
+  const user = await AdminUser.findOne().select("email");
+  return { email: user?.email || normalizeEmail(process.env.ADMIN_INITIAL_EMAIL || "") };
+}
+
+export async function setAdminCredentials(email: string, password: string) {
+  const cleanEmail = normalizeEmail(email);
+  const cleanPassword = typeof password === "string" ? password : "";
+  if (!validEmail(cleanEmail)) {
+    throw new Error("Ingresá un email válido");
+  }
+  if (cleanPassword && (cleanPassword.length < 8 || cleanPassword.length > 128)) {
+    throw new Error("La contraseña debe tener entre 8 y 128 caracteres");
+  }
+
+  await connectDB();
+  const user = await AdminUser.findOne().select("+passwordHash");
+  if (!user) {
+    if (!cleanPassword) throw new Error("Ingresá una contraseña para crear el acceso");
+    await AdminUser.create({ email: cleanEmail, passwordHash: hashPassword(cleanPassword) });
+    return { email: cleanEmail };
+  }
+  user.email = cleanEmail;
+  if (cleanPassword) user.passwordHash = hashPassword(cleanPassword);
+  await user.save();
+  return { email: user.email };
 }
 
 export async function createAdminSession() {

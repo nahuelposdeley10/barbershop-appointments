@@ -59,6 +59,8 @@ export default function AdminPage({
   const [settings, setSettings] = useState<Settings | null>(null);
   const [draft, setDraft] = useState<Settings | null>(null);
   const [barberosInput, setBarberosInput] = useState("1");
+  const [adminEmail, setAdminEmail] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
   const [bookings, setBookings] = useState<AdminBooking[]>([]);
   const [date, setDate] = useState(today);
   const [status, setStatus] = useState("");
@@ -81,6 +83,8 @@ export default function AdminPage({
         setSettings(s);
         setDraft(JSON.parse(JSON.stringify(s)));
         setBarberosInput(String(s.cantidadBarberos ?? 1));
+        setAdminEmail(s.adminEmail || "");
+        setAdminPassword("");
       })
       .catch((e) => setError(e.message));
   }, [token]);
@@ -260,10 +264,16 @@ export default function AdminPage({
     setError("");
     setSaved(false);
     try {
-      const updated = await adminUpdateSettings(token, draft);
+      const updated = await adminUpdateSettings(token, {
+        ...draft,
+        adminEmail: adminEmail.trim(),
+        adminPassword,
+      });
       setSettings(updated);
       setDraft(JSON.parse(JSON.stringify(updated)));
       setBarberosInput(String(updated.cantidadBarberos ?? 1));
+      setAdminEmail(updated.adminEmail || "");
+      setAdminPassword("");
       setSaved(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error inesperado");
@@ -641,13 +651,29 @@ export default function AdminPage({
             </div>
 
             <h3 className="text-[15px] font-extrabold text-accent mt-1.5">Acceso</h3>
-            <Field label="PIN del panel (mínimo 4 caracteres)">
+            <Field label="Email de acceso">
               <input
-                className="input w-full max-w-[240px] text-center text-xl tracking-[6px]"
-                value={draft.pin ?? ""}
-                onChange={(e) => setDraft({ ...draft, pin: e.target.value })}
+                type="email"
+                className="input w-full max-w-[360px]"
+                value={adminEmail}
+                onChange={(e) => setAdminEmail(e.target.value)}
+                placeholder="admin@tubarberia.com"
+                autoComplete="username"
               />
             </Field>
+            <Field label="Nueva contraseña">
+              <input
+                type="password"
+                className="input w-full max-w-[360px]"
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                placeholder="Dejar en blanco para mantenerla"
+                autoComplete="new-password"
+              />
+            </Field>
+            <p className="text-[var(--muted)] text-[13px]">
+              La contraseña debe tener entre 8 y 128 caracteres. Se guarda como hash y nunca se muestra.
+            </p>
 
             {error && <p className="text-[var(--red)] font-semibold">{error}</p>}
             {saved && <p className="text-emerald-400 font-semibold">Configuración guardada ✓</p>}

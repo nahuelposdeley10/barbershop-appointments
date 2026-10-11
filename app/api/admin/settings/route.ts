@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { connectDB } from "@/lib/db";
 import { normalizeDate, defaultSettings } from "@/lib/booking-logic";
-import { requireAdmin, setAdminPin } from "@/lib/auth";
+import { getAdminAccount, requireAdmin, setAdminCredentials } from "@/lib/auth";
 import { Setting } from "@/lib/models/Setting";
 
 export const runtime = "nodejs";
@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
     }
     await connectDB();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let doc: any = await Setting.findOne().select("+pin +pinHash");
+    let doc: any = await Setting.findOne();
     if (!doc) {
       doc = await Setting.create({
         barberName: "Barbería Los Tilos",
@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
       fillDefaults(doc);
       await doc.save();
     }
-    return Response.json(sanitizeSettings(doc));
+    return Response.json(await sanitizeSettings(doc));
   } catch (err) {
     console.error(err);
     return Response.json({ error: "Error del servidor" }, { status: 500 });
@@ -59,7 +59,7 @@ export async function PUT(req: NextRequest) {
     }
     await connectDB();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let current: any = await Setting.findOne().select("+pin +pinHash");
+    let current: any = await Setting.findOne();
     if (!current) {
       current = await Setting.create({
         barberName: "Barbería Los Tilos",
@@ -180,7 +180,9 @@ export async function PUT(req: NextRequest) {
     if (typeof body.cantidadBarberos === "number") {
       current.cantidadBarberos = Math.max(1, Math.round(body.cantidadBarberos));
     }
-    const requestedPin = typeof body.pin === "string" ? body.pin : "";
+    const account = await getAdminAccount();
+    const requestedEmail = typeof body.adminEmail === "string" ? body.adminEmail : account.email;
+    const requestedPassword = typeof body.adminPassword === "string" ? body.adminPassword : "";
     if (Array.isArray(body.unavailableDates)) {
       current.unavailableDates = [
         ...new Set(body.unavailableDates.filter((x) => normalizeDate(x))),
@@ -188,18 +190,20 @@ export async function PUT(req: NextRequest) {
     }
 
     await current.save();
-    if (requestedPin.trim()) await setAdminPin(requestedPin);
-    return Response.json(sanitizeSettings(current));
+    if (requestedEmail.trim() || requestedPassword) {
+      await setAdminCredentials(requestedEmail, requestedPassword);
+    }
+    return Response.json(await sanitizeSettings(current));
   } catch (err) {
     console.error(err);
     return Response.json({ error: "Error del servidor" }, { status: 500 });
   }
 }
 
-function sanitizeSettings(doc: Record<string, unknown>) {
+async function sanitizeSettings(doc: Record<string, unknown>) {
   const candidate = doc as unknown as { toObject?: () => Record<string, unknown> };
   const plain = typeof candidate.toObject === "function" ? candidate.toObject() : { ...doc };
   delete plain.pin;
   delete plain.pinHash;
-  return { ...plain, pin: "" };
+  return { ...plain, ...(await getAdminAccount()), adminPassword: "" };
 }
