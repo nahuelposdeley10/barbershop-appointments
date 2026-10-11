@@ -672,7 +672,7 @@ export default function AdminPage({
               />
             </Field>
             <p className="text-[var(--muted)] text-[13px]">
-              La contraseña debe tener entre 8 y 128 caracteres. Se guarda como hash y nunca se muestra.
+              La contraseña debe tener entre 4 y 128 caracteres. Se guarda como hash y nunca se muestra.
             </p>
 
             {error && <p className="text-[var(--red)] font-semibold">{error}</p>}

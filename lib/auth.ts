@@ -55,7 +55,7 @@ function validEmail(email: string) {
 export async function verifyAdminCredentials(email: string, password: string) {
   const cleanEmail = normalizeEmail(email);
   const cleanPassword = typeof password === "string" ? password : "";
-  if (!validEmail(cleanEmail) || cleanPassword.length < 8 || cleanPassword.length > 128) return false;
+  if (!validEmail(cleanEmail) || cleanPassword.length < 4 || cleanPassword.length > 128) return false;
 
   await connectDB();
   const user = await AdminUser.findOne().select("+passwordHash");
@@ -89,8 +89,8 @@ export async function setAdminCredentials(email: string, password: string) {
   if (!validEmail(cleanEmail)) {
     throw new Error("Ingresá un email válido");
   }
-  if (cleanPassword && (cleanPassword.length < 8 || cleanPassword.length > 128)) {
-    throw new Error("La contraseña debe tener entre 8 y 128 caracteres");
+  if (cleanPassword && (cleanPassword.length < 4 || cleanPassword.length > 128)) {
+    throw new Error("La contraseña debe tener entre 4 y 128 caracteres");
   }
 
   await connectDB();
