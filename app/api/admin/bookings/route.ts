@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { connectDB } from "@/lib/db";
-import { checkToken, normalizeDate } from "@/lib/booking-logic";
+import { normalizeDate } from "@/lib/booking-logic";
+import { requireAdmin } from "@/lib/auth";
 import { Booking } from "@/lib/models/Booking";
 
 export const runtime = "nodejs";
@@ -8,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    if (!checkToken(req.headers.get("authorization"))) {
+    if (!(await requireAdmin(req))) {
       return Response.json({ error: "No autorizado" }, { status: 401 });
     }
     await connectDB();

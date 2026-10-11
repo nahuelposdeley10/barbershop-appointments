@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { connectDB } from "@/lib/db";
-import { checkToken, normalizeDate, defaultSettings } from "@/lib/booking-logic";
+import { normalizeDate, defaultSettings } from "@/lib/booking-logic";
+import { requireAdmin, setAdminPin } from "@/lib/auth";
 import { Setting } from "@/lib/models/Setting";
 
 export const runtime = "nodejs";
@@ -15,12 +16,12 @@ function fillDefaults(doc: Record<string, unknown>) {
 
 export async function GET(req: NextRequest) {
   try {
-    if (!checkToken(req.headers.get("authorization"))) {
+    if (!(await requireAdmin(req))) {
       return Response.json({ error: "No autorizado" }, { status: 401 });
     }
     await connectDB();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let doc: any = await Setting.findOne();
+    let doc: any = await Setting.findOne().select("+pin +pinHash");
     if (!doc) {
       doc = await Setting.create({
         barberName: "Barbería Los Tilos",
@@ -37,14 +38,14 @@ export async function GET(req: NextRequest) {
           close: "20:00",
         })),
         slotMinutes: 30,
-        pin: "1234",
+        pin: "",
         unavailableDates: [],
       });
     } else {
       fillDefaults(doc);
       await doc.save();
     }
-    return Response.json(doc);
+    return Response.json(sanitizeSettings(doc));
   } catch (err) {
     console.error(err);
     return Response.json({ error: "Error del servidor" }, { status: 500 });
@@ -53,12 +54,12 @@ export async function GET(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
-    if (!checkToken(req.headers.get("authorization"))) {
+    if (!(await requireAdmin(req))) {
       return Response.json({ error: "No autorizado" }, { status: 401 });
     }
     await connectDB();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let current: any = await Setting.findOne();
+    let current: any = await Setting.findOne().select("+pin +pinHash");
     if (!current) {
       current = await Setting.create({
         barberName: "Barbería Los Tilos",
@@ -73,7 +74,7 @@ export async function PUT(req: NextRequest) {
           close: "20:00",
         })),
         slotMinutes: 30,
-        pin: "1234",
+        pin: "",
         unavailableDates: [],
       });
     } else {
@@ -176,9 +177,10 @@ export async function PUT(req: NextRequest) {
     if (typeof body.slotMinutes === "number") {
       current.slotMinutes = Math.min(Math.max(Math.round(body.slotMinutes), 10), 120);
     }
-    if (typeof body.pin === "string" && body.pin.trim().length >= 4) {
-      current.pin = body.pin.trim().slice(0, 20);
+    if (typeof body.cantidadBarberos === "number") {
+      current.cantidadBarberos = Math.max(1, Math.round(body.cantidadBarberos));
     }
+    const requestedPin = typeof body.pin === "string" ? body.pin : "";
     if (Array.isArray(body.unavailableDates)) {
       current.unavailableDates = [
         ...new Set(body.unavailableDates.filter((x) => normalizeDate(x))),
@@ -186,9 +188,18 @@ export async function PUT(req: NextRequest) {
     }
 
     await current.save();
-    return Response.json(current);
+    if (requestedPin.trim()) await setAdminPin(requestedPin);
+    return Response.json(sanitizeSettings(current));
   } catch (err) {
     console.error(err);
     return Response.json({ error: "Error del servidor" }, { status: 500 });
   }
+}
+
+function sanitizeSettings(doc: Record<string, unknown>) {
+  const candidate = doc as unknown as { toObject?: () => Record<string, unknown> };
+  const plain = typeof candidate.toObject === "function" ? candidate.toObject() : { ...doc };
+  delete plain.pin;
+  delete plain.pinHash;
+  return { ...plain, pin: "" };
 }

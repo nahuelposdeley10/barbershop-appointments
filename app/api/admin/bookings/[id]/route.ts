@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import { NextRequest } from "next/server";
 import { connectDB } from "@/lib/db";
-import { checkToken } from "@/lib/booking-logic";
+import { requireAdmin } from "@/lib/auth";
 import { Booking } from "@/lib/models/Booking";
 
 export const runtime = "nodejs";
@@ -13,7 +13,7 @@ const STATUS = ["pending", "confirmed", "cancelled", "done"];
 
 export async function PATCH(req: NextRequest, { params }: Ctx) {
   try {
-    if (!checkToken(req.headers.get("authorization"))) {
+    if (!(await requireAdmin(req))) {
       return Response.json({ error: "No autorizado" }, { status: 401 });
     }
     const { id } = await params;
@@ -48,7 +48,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
 
 export async function DELETE(req: NextRequest, { params }: Ctx) {
   try {
-    if (!checkToken(req.headers.get("authorization"))) {
+    if (!(await requireAdmin(req))) {
       return Response.json({ error: "No autorizado" }, { status: 401 });
     }
     const { id } = await params;

@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { v2 as cloudinary } from "cloudinary";
-import { checkToken } from "@/lib/booking-logic";
+import { requireAdmin } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,7 +13,7 @@ cloudinary.config({
 
 export async function POST(req: NextRequest) {
   try {
-    if (!checkToken(req.headers.get("authorization"))) {
+    if (!(await requireAdmin(req))) {
       return Response.json({ error: "No autorizado" }, { status: 401 });
     }
 
