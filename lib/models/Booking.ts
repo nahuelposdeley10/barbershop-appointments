@@ -14,9 +14,13 @@ const bookingSchema = new mongoose.Schema(
       enum: ["pending", "confirmed", "cancelled", "done"],
       default: "pending",
     },
+    manageTokenHash: { type: String, select: false, index: true },
+    cancelledAt: { type: Date },
   },
   { timestamps: true }
 );
+
+bookingSchema.index({ date: 1, time: 1, status: 1 });
 
 export type BookingStatus = "pending" | "confirmed" | "cancelled" | "done";
 
@@ -30,9 +34,11 @@ export type BookingDoc = {
   date: string;
   time: string;
   status: BookingStatus;
+  manageTokenHash?: string;
+  cancelledAt?: Date;
 };
 
-// Reutilizar modelo si ya está compilado (evita errores en hot-reload)
+// Reuse the model if already compiled (avoids errors on hot-reload)
 export const Booking =
   (mongoose.models.Booking as mongoose.Model<BookingDoc>) ||
   mongoose.model("Booking", bookingSchema);
