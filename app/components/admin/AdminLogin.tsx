@@ -5,7 +5,7 @@ import { adminLogin } from "@/lib/client-api";
 import { BarberPole } from "../booking/BarberIcons";
 import Navbar from "../Navbar";
 
-export default function AdminLogin({ onLogin }: { onLogin: (token: string) => void }) {
+export default function AdminLogin({ onLogin }: { onLogin: () => void }) {
   const [pin, setPin] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -15,8 +15,8 @@ export default function AdminLogin({ onLogin }: { onLogin: (token: string) => vo
     setLoading(true);
     setError("");
     try {
-      const res = await adminLogin(pin.trim());
-      onLogin(res.token);
+      await adminLogin(pin.trim());
+      onLogin();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error inesperado");
     } finally {
@@ -67,7 +67,7 @@ export default function AdminLogin({ onLogin }: { onLogin: (token: string) => vo
               </button>
             </form>
             <p className="text-[var(--muted)] text-[13px]">
-              PIN por defecto: 1234 (podés cambiarlo en Configuración)
+              Acceso privado para administrar turnos y la información del local.
             </p>
           </div>
         </div>
