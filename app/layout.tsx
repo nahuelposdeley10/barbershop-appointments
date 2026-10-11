@@ -23,6 +23,7 @@ export async function generateMetadata(): Promise<Metadata> {
   }
 
   return {
+    metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
     title: `${nombre} | Tu barbería de confianza`,
     description:
       `Cortes modernos, degradados, barba y más. Reservá tu turno online en ${nombre}.`,
@@ -39,6 +40,13 @@ export async function generateMetadata(): Promise<Metadata> {
       description: "Tu barbería de confianza. Cortes, barba, degradados y más.",
       type: "website",
     },
+    twitter: {
+      card: "summary_large_image",
+      title: nombre,
+      description: `Reservá tu turno online en ${nombre}.`,
+    },
+    alternates: { canonical: "/" },
+    robots: { index: true, follow: true },
   };
 }
 

@@ -8,7 +8,7 @@ import { getSettings } from "@/lib/booking-logic";
 export const dynamic = "force-dynamic";
 
 /* ─────────────────────────────────────────────
-   Datos del sitio (se leen de la base de datos)
+   Site data (read from the database)
    ───────────────────────────────────────────── */
 type SiteService = { nombre: string; precio: number; duracion: number };
 type SiteDay = { dia: string; horario: string };
@@ -49,7 +49,7 @@ const DAY_NAMES = [
   "Sábado",
 ];
 
-/* Imágenes de Unsplash (fotos reales de barbería) */
+/* Unsplash images (real barbershop photos) */
 const IMG = {
   hero: "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?q=80&w=1800&auto=format&fit=crop",
   about:
@@ -245,7 +245,7 @@ function SectionDivider() {
 function Hero({ data }: { data: SiteData }) {
   return (
     <section id="hero" className="relative min-h-screen flex items-center justify-center overflow-hidden scroll-mt-0">
-      {/* Fondo con imagen */}
+      {/* Background with image */}
       <div className="absolute inset-0">
         <Image
           src={data.imgHero}
@@ -259,11 +259,11 @@ function Hero({ data }: { data: SiteData }) {
         <div className="absolute inset-0 bg-gradient-to-b from-zinc-950/60 via-zinc-950/40 to-zinc-950" />
       </div>
 
-      {/* Decorativo */}
+      {/* Decorative */}
       <div className="absolute top-24 left-8 w-px h-40 bg-gradient-to-b from-accent/40 to-transparent hidden sm:block" />
       <div className="absolute bottom-24 right-10 w-px h-60 bg-gradient-to-b from-accent/30 to-transparent hidden sm:block" />
 
-      {/* Barber Poles verticales decorativos */}
+      {/* Decorative vertical Barber Poles */}
       <div className="absolute left-6 top-1/2 -translate-y-1/2 hidden lg:block">
         <BarberPole vertical className="h-48 opacity-60" />
       </div>
@@ -308,12 +308,6 @@ function Hero({ data }: { data: SiteData }) {
           >
             Ver Servicios
           </a>
-          <Link
-            href="/admin"
-            className="text-sm text-zinc-400 hover:text-accent transition-colors border border-zinc-700/60 px-4 py-2.5 rounded-full hover:border-accent flex items-center justify-center"
-          >
-            Ingreso barbero
-          </Link>
         </div>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-8 mt-12 sm:mt-14 text-sm text-zinc-400">
@@ -802,6 +796,10 @@ function Footer({ data }: { data: SiteData }) {
             © {new Date().getFullYear()} {data.nombre}. Todos los derechos reservados.
           </p>
         </div>
+        <div className="flex justify-center gap-4 mt-8 text-xs text-zinc-600">
+          <Link href="/privacidad" className="hover:text-accent">Privacidad</Link>
+          <Link href="/terminos" className="hover:text-accent">Términos de reserva</Link>
+        </div>
       </div>
     </footer>
   );
@@ -820,8 +818,31 @@ export async function generateMetadata() {
 
 export default async function Home() {
   const data = await getSiteData();
+  const structuredData = {
+    "@context": "https://schema.org",
+    "@type": "HairSalon",
+    name: data.nombre,
+    description: data.heroDescription,
+    url: process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
+    telephone: data.whatsapp ? `+${data.whatsapp}` : undefined,
+    email: data.email || undefined,
+    address: data.direccion
+      ? { "@type": "PostalAddress", streetAddress: data.direccion }
+      : undefined,
+    sameAs: [data.instagram, data.facebook].filter((url) => url && url !== "#"),
+    makesOffer: data.servicios.map((service) => ({
+      "@type": "Offer",
+      name: service.nombre,
+      price: service.precio,
+      priceCurrency: "ARS",
+    })),
+  };
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+      />
       <Navbar nombre={data.nombre} />
       <main className="flex-1">
         <Hero data={data} />

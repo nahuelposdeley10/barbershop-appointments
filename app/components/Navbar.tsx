@@ -53,13 +53,13 @@ export default function Navbar({
     <nav className="fixed top-0 left-0 right-0 z-50 bg-zinc-950/80 backdrop-blur-md border-b border-zinc-800/50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-          <a href="/#hero" className="flex items-center gap-2.5 group">
+          <Link href="/#hero" className="flex items-center gap-2.5 group">
             <span className="text-accent">{Icons.scissors}</span>
             <BarberPole className="w-10 h-[5px] opacity-70" />
             <span className="font-display text-xl font-bold tracking-tight group-hover:text-accent transition-colors">
               {nombre}
             </span>
-          </a>
+          </Link>
 
           <div className="hidden md:flex items-center gap-8">
             {links.map((link) => (
