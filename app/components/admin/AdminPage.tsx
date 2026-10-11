@@ -47,12 +47,22 @@ export default function AdminPage({
   onLogout: () => void;
 }) {
   const today = localDateStr(new Date());
-  const [tab, setTab] = useState<"agenda" | "config" | "web" | "imagenes">("agenda");
+  const [tab, setTab] = useState<"agenda" | "config" | "web" | "imagenes">(() => {
+    if (typeof window !== "undefined") {
+      const saved = window.sessionStorage.getItem("adminTab");
+      if (saved === "config" || saved === "web" || saved === "imagenes" || saved === "agenda") {
+        return saved;
+      }
+    }
+    return "agenda";
+  });
   const [settings, setSettings] = useState<Settings | null>(null);
   const [draft, setDraft] = useState<Settings | null>(null);
+  const [barberosInput, setBarberosInput] = useState("1");
   const [bookings, setBookings] = useState<AdminBooking[]>([]);
   const [date, setDate] = useState(today);
   const [status, setStatus] = useState("");
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
@@ -62,10 +72,15 @@ export default function AdminPage({
   const [uploadError, setUploadError] = useState("");
 
   useEffect(() => {
+    window.sessionStorage.setItem("adminTab", tab);
+  }, [tab]);
+
+  useEffect(() => {
     adminGetSettings(token)
       .then((s) => {
         setSettings(s);
         setDraft(JSON.parse(JSON.stringify(s)));
+        setBarberosInput(String(s.cantidadBarberos ?? 1));
       })
       .catch((e) => setError(e.message));
   }, [token]);
@@ -248,6 +263,7 @@ export default function AdminPage({
       const updated = await adminUpdateSettings(token, draft);
       setSettings(updated);
       setDraft(JSON.parse(JSON.stringify(updated)));
+      setBarberosInput(String(updated.cantidadBarberos ?? 1));
       setSaved(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error inesperado");
@@ -262,6 +278,13 @@ export default function AdminPage({
     done: bookings.filter((b) => b.status === "done").length,
     cancelled: bookings.filter((b) => b.status === "cancelled").length,
   };
+  const visibleBookings = bookings.filter((booking) => {
+    const query = search.trim().toLowerCase();
+    if (!query) return true;
+    return [booking.name, booking.phone, booking.service].some((value) =>
+      value.toLowerCase().includes(query)
+    );
+  });
 
   return (
     <div className="booking-bg">
@@ -269,7 +292,7 @@ export default function AdminPage({
         nombre={settings ? settings.barberName : "Barbería"}
         onLogout={onLogout}
       />
-      <div className="flex flex-col gap-5 max-w-[720px] w-full mx-auto pt-24 px-5 pb-16">
+      <div className="flex flex-col gap-5 max-w-[720px] lg:max-w-5xl w-full mx-auto pt-24 px-5 pb-16">
 
         <BarberPole />
 
@@ -297,6 +320,13 @@ export default function AdminPage({
         {tab === "agenda" && (
           <>
             <section className="flex flex-wrap items-end gap-3 bg-[var(--card)] border border-[var(--border)] rounded-2xl p-[22px]">
+              <button
+                type="button"
+                className="px-4 py-3 rounded-xl bg-[var(--card-2)] border border-[var(--border)] font-bold text-sm hover:border-[var(--accent)]"
+                onClick={() => setDate(today)}
+              >
+                Hoy
+              </button>
               <Field label="Fecha">
                 <input
                   type="date"
@@ -318,6 +348,15 @@ export default function AdminPage({
                   <option value="cancelled">Cancelados</option>
                 </select>
               </Field>
+              <Field label="Buscar">
+                <input
+                  className="input min-w-[180px]"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Nombre, teléfono o servicio"
+                  type="search"
+                />
+              </Field>
             </section>
 
             {status === "" && (
@@ -338,13 +377,13 @@ export default function AdminPage({
               </h2>
               {loading ? (
                 <p className="text-[var(--muted)]">Cargando turnos…</p>
-              ) : bookings.length === 0 ? (
+              ) : visibleBookings.length === 0 ? (
                 <p className="text-[var(--muted)] bg-[var(--bg-soft)] border border-dashed border-[var(--border)] rounded-xl p-5 text-center">
                   No hay turnos para esta selección.
                 </p>
               ) : (
-                <ul className="flex flex-col gap-2.5 list-none m-0 p-0">
-                  {bookings.map((b) => (
+                <ul className="grid grid-cols-1 lg:grid-cols-2 gap-2.5 list-none m-0 p-0">
+                  {visibleBookings.map((b) => (
                     <li
                       key={b._id}
                       className={`grid grid-cols-[64px_1fr_auto] gap-3.5 items-start bg-[var(--bg-soft)] border border-[var(--border)] rounded-[14px] p-3.5 ${
@@ -532,6 +571,32 @@ export default function AdminPage({
               />
             </Field>
 
+            <h3 className="text-[15px] font-extrabold text-accent mt-1.5">Barberos</h3>
+            <Field label="Cantidad de barberos (sillas)">
+              <input
+                type="number"
+                min={1}
+                step={1}
+                className="input"
+                value={barberosInput}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  setBarberosInput(raw);
+                  setDraft({
+                    ...draft,
+                    cantidadBarberos:
+                      raw === "" ? 0 : Math.max(1, Number(raw)),
+                  });
+                }}
+              />
+            </Field>
+            <p className="text-[var(--muted)] text-[13px]">
+              Importante: cada barbero tiene que tener su silla. Si son{" "}
+              <strong className="text-[var(--accent)]">3 barberos</strong>, se
+              permiten hasta 3 reservas a la misma hora (una por silla). Con 1
+              barbero, solo 1 reserva por horario.
+            </p>
+
             <h3 className="text-[15px] font-extrabold text-accent mt-1.5">Días sin atención</h3>
             <div className="flex gap-2.5 items-center">
               <input
@@ -579,7 +644,7 @@ export default function AdminPage({
             <Field label="PIN del panel (mínimo 4 caracteres)">
               <input
                 className="input w-full max-w-[240px] text-center text-xl tracking-[6px]"
-                value={draft.pin}
+                value={draft.pin ?? ""}
                 onChange={(e) => setDraft({ ...draft, pin: e.target.value })}
               />
             </Field>
@@ -783,7 +848,7 @@ export default function AdminPage({
             </div>
 
             <h3 className="text-[15px] font-extrabold text-accent mt-1">Galería</h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
               {draft.imgGaleria.map((src, i) => (
                 <div
                   key={i}
@@ -825,25 +890,44 @@ export default function AdminPage({
             <p className="text-[var(--muted)] text-[13px]">
               Si dejás la foto vacía, se muestra una imagen de ejemplo por defecto.
             </p>
-            <div className="flex flex-col gap-3">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               {draft.profesionales.map((p, i) => (
                 <div
                   key={i}
                   className="flex flex-col gap-2.5 bg-[var(--bg-soft)] border border-[var(--border)] rounded-xl p-3"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    {p.img ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={p.img}
-                        alt={p.nombre || "Profesional"}
-                        className="w-12 h-12 rounded-lg object-cover"
-                      />
-                    ) : (
-                      <span className="grid w-12 h-12 rounded-lg place-items-center bg-[var(--card-2)] text-[var(--muted)]">
-                        ✂
-                      </span>
-                    )}
+                    <div className="flex items-center gap-3">
+                      {p.img ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={p.img}
+                          alt={p.nombre || "Profesional"}
+                          className="w-12 h-12 rounded-lg object-cover"
+                        />
+                      ) : (
+                        <span className="grid w-12 h-12 rounded-lg place-items-center bg-[var(--card-2)] text-[var(--muted)]">
+                          ✂
+                        </span>
+                      )}
+                      <Field label="Fotografía">
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const f = e.target.files && e.target.files[0];
+                              if (f) handleUploadProfesional(f, i);
+                              e.target.value = "";
+                            }}
+                          />
+                          <span className="px-2.5 py-1.5 rounded-lg bg-[var(--card)] border border-[var(--border)] font-bold text-xs text-[var(--text)] cursor-pointer hover:border-accent">
+                            {p.img ? "Cambiar" : "Subir"}
+                          </span>
+                        </label>
+                      </Field>
+                    </div>
                     <button
                       type="button"
                       className="btn-small-red"
@@ -868,23 +952,6 @@ export default function AdminPage({
                       />
                     </Field>
                   </div>
-                  <Field label="Fotografía">
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => {
-                          const f = e.target.files && e.target.files[0];
-                          if (f) handleUploadProfesional(f, i);
-                          e.target.value = "";
-                        }}
-                      />
-                      <span className="px-3 py-2 rounded-xl bg-[var(--card-2)] border border-[var(--border)] font-bold text-xs text-[var(--text)] cursor-pointer hover:border-accent">
-                        {p.img ? "Cambiar" : "Subir"}
-                      </span>
-                    </label>
-                  </Field>
                   <TagsEditor
                     tags={p.tags}
                     onChange={(tags) => updateProfesional(i, "tags", tags)}
@@ -893,7 +960,7 @@ export default function AdminPage({
               ))}
               <button
                 type="button"
-                className="self-start px-4 py-2.5 rounded-xl bg-[var(--card-2)] border border-[var(--border)] font-bold text-sm text-[var(--text)] hover:border-[var(--accent)]"
+                className="lg:col-span-2 justify-self-start px-4 py-2.5 rounded-xl bg-[var(--card-2)] border border-[var(--border)] font-bold text-sm text-[var(--text)] hover:border-[var(--accent)]"
                 onClick={addProfesional}
               >
                 + Agregar profesional
