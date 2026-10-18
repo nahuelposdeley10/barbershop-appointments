@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { cache } from "react";
 import Navbar from "./components/Navbar";
 import { BarberPole } from "./components/booking/BarberIcons";
 import { connectDB } from "@/lib/db";
@@ -140,10 +141,9 @@ function fallbackSiteData(): SiteData {
   };
 }
 
-async function getSiteData(): Promise<SiteData> {
-  try {
-    await connectDB();
-    const s = await getSettings();
+async function getSiteDataFromDatabase(): Promise<SiteData> {
+  await connectDB();
+  const s = await getSettings();
     const servicios: SiteService[] = (s.services || []).map(
       (sv: { name: string; price: number; duration: number }) => ({
         nombre: sv.name || "Servicio",
@@ -167,40 +167,50 @@ async function getSiteData(): Promise<SiteData> {
       })
     );
 
-    return {
-      nombre: s.barberName || "Barbería",
-      slogan: s.slogan || "Tu estilo, nuestra pasión",
-      heroTitle1: s.heroTitle1 || "Tu Estilo,",
-      heroTitle2: s.heroTitle2 || "Nuestra Pasión",
-      heroDescription:
-        s.heroDescription ||
-        "Cortes modernos, degradados impecables y una experiencia premium que te hace volver.",
-      aboutTitle: s.aboutTitle || "Más que un corte,",
-      aboutTitle2: s.aboutTitle2 || "una experiencia",
-      aboutText:
-        s.aboutText ||
-        "Combinamos técnica, estilo y calidez para que cada visita sea única.",
-      whatsapp: s.whatsapp || "5491100000000",
-      instagram: s.instagram || "#",
-      facebook: s.facebook || "#",
-      email: s.email || "contacto@barberia.com",
-      direccion: s.direccion || "Av. Ejemplo 1234, Ciudad",
-      mapaQuery: s.mapaQuery || "Av.+Ejemplo+1234,+Ciudad",
-      imgHero: s.imgHero || IMG.hero,
-      imgAbout: s.imgAbout || IMG.about,
-      imgReservar: s.imgReservar || IMG.reservar,
-      imgGaleria:
-        s.imgGaleria && s.imgGaleria.length > 0 ? s.imgGaleria : IMG.galeria,
-      profesionales: profesionalesDb.length > 0 ? profesionalesDb : IMG.profesionales,
-      reservarUrl: "/reservar",
-      servicios,
-      horarios,
-    };
+  return {
+    nombre: s.barberName || "Barbería",
+    slogan: s.slogan || "Tu estilo, nuestra pasión",
+    heroTitle1: s.heroTitle1 || "Tu Estilo,",
+    heroTitle2: s.heroTitle2 || "Nuestra Pasión",
+    heroDescription:
+      s.heroDescription ||
+      "Cortes modernos, degradados impecables y una experiencia premium que te hace volver.",
+    aboutTitle: s.aboutTitle || "Más que un corte,",
+    aboutTitle2: s.aboutTitle2 || "una experiencia",
+    aboutText:
+      s.aboutText ||
+      "Combinamos técnica, estilo y calidez para que cada visita sea única.",
+    whatsapp: s.whatsapp || "5491100000000",
+    instagram: s.instagram || "#",
+    facebook: s.facebook || "#",
+    email: s.email || "contacto@barberia.com",
+    direccion: s.direccion || "Av. Ejemplo 1234, Ciudad",
+    mapaQuery: s.mapaQuery || "Av.+Ejemplo+1234,+Ciudad",
+    imgHero: s.imgHero || IMG.hero,
+    imgAbout: s.imgAbout || IMG.about,
+    imgReservar: s.imgReservar || IMG.reservar,
+    imgGaleria:
+      s.imgGaleria && s.imgGaleria.length > 0 ? s.imgGaleria : IMG.galeria,
+    profesionales: profesionalesDb.length > 0 ? profesionalesDb : IMG.profesionales,
+    reservarUrl: "/reservar",
+    servicios,
+    horarios,
+  };
+}
+
+const getSiteData = cache(async (): Promise<SiteData> => {
+  try {
+    return await Promise.race([
+      getSiteDataFromDatabase(),
+      new Promise<SiteData>((_, reject) => {
+        setTimeout(() => reject(new Error("Site data request timed out")), 1200);
+      }),
+    ]);
   } catch (error) {
     console.error("Site data unavailable; rendering fallback content", error);
     return fallbackSiteData();
   }
-}
+});
 
 function serviceImage(name: string): string {
   const n = name.toLowerCase();

@@ -16,7 +16,10 @@ const playfair = Playfair_Display({
 export async function generateMetadata(): Promise<Metadata> {
   let nombre = "BarberYá";
   try {
-    const s = await getSettings();
+    const s = await Promise.race([
+      getSettings(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 800)),
+    ]);
     if (s?.barberName) nombre = s.barberName;
   } catch {
     // fallback: no romper el layout raíz si la DB no responde
