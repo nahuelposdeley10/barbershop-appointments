@@ -14,6 +14,22 @@ function fillDefaults(doc: Record<string, unknown>) {
   }
 }
 
+function normalizeMapLink(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return "";
+  try {
+    const url = new URL(value.trim());
+    const isGoogleMapsUrl =
+      url.hostname === "maps.app.goo.gl" ||
+      url.hostname === "maps.google.com" ||
+      (["www.google.com", "google.com"].includes(url.hostname) &&
+        url.pathname.startsWith("/maps"));
+    if (url.protocol !== "https:" || !isGoogleMapsUrl) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(req: NextRequest) {
   try {
     if (!(await requireAdmin(req))) {
@@ -117,6 +133,16 @@ export async function PUT(req: NextRequest) {
     setStr("email", 120);
     setStr("direccion", 200);
     setStr("mapaQuery", 500);
+    if (typeof body.mapLink === "string") {
+      const mapLink = normalizeMapLink(body.mapLink);
+      if (mapLink === null) {
+        return Response.json(
+          { error: "Ingresá un enlace válido de Google Maps." },
+          { status: 400 }
+        );
+      }
+      current.mapLink = mapLink.slice(0, 500);
+    }
     const applyScalarImg = (field: "imgHero" | "imgAbout" | "imgReservar") => {
       if (typeof current[field] === "undefined" || typeof current[field] !== "string") current[field] = "";
       if (typeof body[field] === "string") {

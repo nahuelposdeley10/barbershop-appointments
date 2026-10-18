@@ -6,6 +6,7 @@ export type Service = {
   name: string;
   price: number;
   duration: number;
+  img: string;
 };
 
 export type Slot = { time: string; free: boolean; ocupadas: number; sillas: number };
@@ -50,6 +51,7 @@ export type Settings = {
   email: string;
   direccion: string;
   mapaQuery: string;
+  mapLink: string;
   imgHero: string;
   imgAbout: string;
   imgReservar: string;

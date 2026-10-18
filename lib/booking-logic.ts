@@ -27,6 +27,7 @@ export function defaultSettings() {
     email: "contacto@barberia.com",
     direccion: "Av. Ejemplo 1234, Ciudad",
     mapaQuery: "Av.+Ejemplo+1234,+Ciudad",
+    mapLink: "https://maps.app.goo.gl/eYWFdpahSLpVakd68",
     imgHero: "",
     imgAbout: "",
     imgReservar: "",

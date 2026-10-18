@@ -154,7 +154,7 @@ export default function AdminPage({
     if (!draft) return;
     setDraft({
       ...draft,
-      services: [...draft.services, { name: "", price: 0, duration: 30 }],
+      services: [...draft.services, { name: "", price: 0, duration: 30, img: "" }],
     });
   }
 
@@ -218,6 +218,23 @@ export default function AdminPage({
         i === index ? { ...p, img: res.url } : p
       );
       setDraft({ ...draft, profesionales });
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : "Error al subir la imagen");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleUploadService(file: File, index: number) {
+    if (!draft) return;
+    setUploading(true);
+    setUploadError("");
+    try {
+      const res = await adminUploadImage(token, file, "servicios");
+      const services = draft.services.map((service, i) =>
+        i === index ? { ...service, img: res.url } : service
+      );
+      setDraft({ ...draft, services });
     } catch (e) {
       setUploadError(e instanceof Error ? e.message : "Error al subir la imagen");
     } finally {
@@ -483,40 +500,81 @@ export default function AdminPage({
 
             <h3 className="text-[15px] font-extrabold text-accent mt-1.5">Servicios</h3>
             <p className="text-[var(--muted)] text-[13px]">
-              El precio se muestra al cliente. La duración evita cruces de turnos.
+              Elegí una foto por servicio: se verá en la portada y se guarda al actualizar el sitio.
             </p>
             <div className="flex flex-col gap-2.5">
               {draft.services.map((s, i) => (
-                <div key={i} className="grid grid-cols-2 sm:grid-cols-[1fr_100px_100px_auto] gap-2">
-                  <input
-                    className="input col-span-2 sm:col-span-1"
-                    value={s.name}
-                    placeholder="Nombre del servicio"
-                    onChange={(e) => updateDraftService(i, "name", e.target.value)}
-                  />
-                  <input
-                    className="input"
-                    type="number"
-                    min={0}
-                    value={s.price}
-                    onChange={(e) => updateDraftService(i, "price", e.target.value)}
-                  />
-                  <input
-                    className="input"
-                    type="number"
-                    min={5}
-                    step={5}
-                    value={s.duration}
-                    onChange={(e) => updateDraftService(i, "duration", e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    className="btn-small-red"
-                    onClick={() => removeService(i)}
-                    disabled={draft.services.length <= 1}
-                  >
-                    Quitar
-                  </button>
+                <div
+                  key={i}
+                  className="flex flex-col gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] p-3"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      {s.img ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={s.img}
+                          alt={s.name || "Servicio"}
+                          className="h-14 w-14 shrink-0 rounded-lg object-cover"
+                        />
+                      ) : (
+                        <span className="grid h-14 w-14 shrink-0 place-items-center rounded-lg bg-[var(--card-2)] text-xl text-[var(--muted)]">
+                          ✂
+                        </span>
+                      )}
+                      <label
+                        className="min-w-0 cursor-pointer text-xs font-bold text-[var(--text)]"
+                        style={{ pointerEvents: uploading ? "none" : "auto", opacity: uploading ? 0.5 : 1 }}
+                      >
+                        <span className="inline-flex rounded-lg border border-[var(--border)] bg-[var(--card)] px-2.5 py-1.5 hover:border-accent">
+                          {uploading ? "Subiendo…" : s.img ? "Cambiar foto" : "Subir foto"}
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleUploadService(file, i);
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-small-red"
+                      onClick={() => removeService(i)}
+                      disabled={draft.services.length <= 1}
+                    >
+                      Quitar
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 min-[420px]:grid-cols-[1fr_100px_100px] gap-2">
+                    <input
+                      className="input"
+                      value={s.name}
+                      placeholder="Nombre del servicio"
+                      onChange={(e) => updateDraftService(i, "name", e.target.value)}
+                    />
+                    <input
+                      className="input"
+                      type="number"
+                      min={0}
+                      aria-label={`Precio de ${s.name || `servicio ${i + 1}`}`}
+                      value={s.price}
+                      onChange={(e) => updateDraftService(i, "price", e.target.value)}
+                    />
+                    <input
+                      className="input"
+                      type="number"
+                      min={5}
+                      step={5}
+                      aria-label={`Duración de ${s.name || `servicio ${i + 1}`}`}
+                      value={s.duration}
+                      onChange={(e) => updateDraftService(i, "duration", e.target.value)}
+                    />
+                  </div>
                 </div>
               ))}
               <button
@@ -813,6 +871,19 @@ export default function AdminPage({
                 value={draft.mapaQuery}
                 onChange={(e) => setDraft({ ...draft, mapaQuery: e.target.value })}
               />
+            </Field>
+            <Field label="Link de Google Maps al tocar el mapa">
+              <input
+                className="input"
+                type="url"
+                inputMode="url"
+                placeholder="https://maps.app.goo.gl/..."
+                value={draft.mapLink}
+                onChange={(e) => setDraft({ ...draft, mapLink: e.target.value })}
+              />
+              <p className="mt-1 text-[12px] text-[var(--muted)]">
+                Pegá el enlace de Compartir de Google Maps. El mapa y la dirección abrirán ese destino.
+              </p>
             </Field>
 
             {error && <p className="text-[var(--red)] font-semibold">{error}</p>}

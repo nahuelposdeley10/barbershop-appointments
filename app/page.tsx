@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 /* ─────────────────────────────────────────────
    Site data (read from the database)
    ───────────────────────────────────────────── */
-type SiteService = { nombre: string; precio: number; duracion: number };
+type SiteService = { nombre: string; precio: number; duracion: number; img: string };
 type SiteDay = { dia: string; horario: string };
 type SiteProfesional = { nombre: string; rol: string; img: string; tags: string[] };
 
@@ -30,6 +30,7 @@ type SiteData = {
   email: string;
   direccion: string;
   mapaQuery: string;
+  mapLink: string;
   imgHero: string;
   imgAbout: string;
   imgReservar: string;
@@ -119,6 +120,7 @@ function fallbackSiteData(): SiteData {
     email: "contacto@barberia.com",
     direccion: "Av. Ejemplo 1234, Ciudad",
     mapaQuery: "Av.+Ejemplo+1234,+Ciudad",
+    mapLink: "https://maps.app.goo.gl/eYWFdpahSLpVakd68",
     imgHero: IMG.hero,
     imgAbout: IMG.about,
     imgReservar: IMG.reservar,
@@ -126,9 +128,9 @@ function fallbackSiteData(): SiteData {
     profesionales: IMG.profesionales,
     reservarUrl: "/reservar",
     servicios: [
-      { nombre: "Corte de cabello", precio: 5000, duracion: 30 },
-      { nombre: "Barba", precio: 3000, duracion: 20 },
-      { nombre: "Corte y barba", precio: 7000, duracion: 40 },
+      { nombre: "Corte de cabello", precio: 5000, duracion: 30, img: "" },
+      { nombre: "Barba", precio: 3000, duracion: 20, img: "" },
+      { nombre: "Corte y barba", precio: 7000, duracion: 40, img: "" },
     ],
     horarios: [
       { dia: "Lunes", horario: "09:00 - 20:00" },
@@ -145,10 +147,11 @@ async function getSiteDataFromDatabase(): Promise<SiteData> {
   await connectDB();
   const s = await getSettings();
     const servicios: SiteService[] = (s.services || []).map(
-      (sv: { name: string; price: number; duration: number }) => ({
+      (sv: { name: string; price: number; duration: number; img?: string }) => ({
         nombre: sv.name || "Servicio",
         precio: sv.price || 0,
         duracion: sv.duration || 30,
+        img: sv.img || "",
       })
     );
     const horarios: SiteDay[] = (s.days || [])
@@ -186,6 +189,7 @@ async function getSiteDataFromDatabase(): Promise<SiteData> {
     email: s.email || "contacto@barberia.com",
     direccion: s.direccion || "Av. Ejemplo 1234, Ciudad",
     mapaQuery: s.mapaQuery || "Av.+Ejemplo+1234,+Ciudad",
+    mapLink: s.mapLink || "https://maps.app.goo.gl/eYWFdpahSLpVakd68",
     imgHero: s.imgHero || IMG.hero,
     imgAbout: s.imgAbout || IMG.about,
     imgReservar: s.imgReservar || IMG.reservar,
@@ -203,7 +207,10 @@ const getSiteData = cache(async (): Promise<SiteData> => {
     return await Promise.race([
       getSiteDataFromDatabase(),
       new Promise<SiteData>((_, reject) => {
-        setTimeout(() => reject(new Error("Site data request timed out")), 1200);
+        // Keep this slightly above MongoDB's 3s connection timeout. A shorter
+        // race can render the generic fallback while a cold function is still
+        // establishing a healthy connection to the database.
+        setTimeout(() => reject(new Error("Site data request timed out")), 3500);
       }),
     ]);
   } catch (error) {
@@ -311,7 +318,7 @@ function Hero({ data }: { data: SiteData }) {
           className="object-cover"
         />
         <div className="absolute inset-0 bg-zinc-950/70" />
-        <div className="absolute inset-0 bg-gradient-to-b from-zinc-950/60 via-zinc-950/40 to-zinc-950" />
+        <div className="absolute inset-0 bg-gradient-to-b from-zinc-950/60 to-zinc-950" />
       </div>
 
       {/* Decorative */}
@@ -469,7 +476,7 @@ function Servicios({ data }: { data: SiteData }) {
     nombre: sv.nombre,
     precio: `$${sv.precio.toLocaleString("es-AR")}`,
     duracion: `${sv.duracion} min`,
-    img: serviceImage(sv.nombre),
+    img: sv.img || serviceImage(sv.nombre),
   }));
 
   return (
@@ -708,6 +715,7 @@ function Reservar({ data }: { data: SiteData }) {
 
 function Ubicacion({ data }: { data: SiteData }) {
   const dias = data.horarios;
+  const mapLink = data.mapLink || `https://www.google.com/maps/search/?api=1&query=${data.mapaQuery}`;
 
   return (
     <section id="ubicacion" className="py-20 sm:py-24 px-4 bg-zinc-900/30 scroll-mt-16">
@@ -719,7 +727,7 @@ function Ubicacion({ data }: { data: SiteData }) {
         />
 
         <div className="grid lg:grid-cols-2 gap-8">
-          <div className="rounded-2xl overflow-hidden border border-card-border h-[320px] sm:h-[400px]">
+          <div className="group relative h-[320px] overflow-hidden rounded-2xl border border-card-border sm:h-[400px]">
             <iframe
               src={`https://www.google.com/maps?q=${data.mapaQuery}&output=embed`}
               width="100%"
@@ -729,7 +737,19 @@ function Ubicacion({ data }: { data: SiteData }) {
               loading="lazy"
               referrerPolicy="no-referrer-when-downgrade"
               title={`Ubicación de ${data.nombre}`}
+              className="pointer-events-none"
             />
+            <a
+              href={mapLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`Abrir la ubicación de ${data.nombre} en Google Maps`}
+              className="absolute inset-0 z-10 flex items-end bg-zinc-950/0 p-4 transition-colors hover:bg-zinc-950/10 focus-visible:bg-zinc-950/20 focus-visible:outline-none"
+            >
+              <span className="rounded-full bg-zinc-950/85 px-4 py-2 text-sm font-semibold text-white shadow-lg backdrop-blur-sm transition-transform group-hover:-translate-y-1 group-focus-within:-translate-y-1">
+                Abrir en Google Maps
+              </span>
+            </a>
           </div>
 
           <div className="flex flex-col gap-6">
@@ -739,7 +759,7 @@ function Ubicacion({ data }: { data: SiteData }) {
                 <div>
                   <h3 className="font-semibold text-lg mb-1">Dirección</h3>
                   <a
-                    href={`https://www.google.com/maps/search/?api=1&query=${data.mapaQuery}`}
+                    href={mapLink}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-zinc-400 hover:text-accent transition-colors"

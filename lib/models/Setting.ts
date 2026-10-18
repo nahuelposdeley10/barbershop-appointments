@@ -54,6 +54,7 @@ const settingSchema = new mongoose.Schema({
   email: { type: String, default: "contacto@barberia.com" },
   direccion: { type: String, default: "Av. Ejemplo 1234, Ciudad" },
   mapaQuery: { type: String, default: "Av.+Ejemplo+1234,+Ciudad" },
+  mapLink: { type: String, default: "" },
   imgHero: { type: String, default: "" },
   imgAbout: { type: String, default: "" },
   imgReservar: { type: String, default: "" },
@@ -106,6 +107,7 @@ export type SettingsDoc = {
   email: string;
   direccion: string;
   mapaQuery: string;
+  mapLink: string;
   imgHero: string;
   imgAbout: string;
   imgReservar: string;
