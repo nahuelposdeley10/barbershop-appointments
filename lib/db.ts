@@ -27,10 +27,16 @@ export async function connectDB(): Promise<typeof mongoose> {
   if (!globalThis.mongooseCache!.promise) {
     const opts = {
       bufferCommands: false,
+      serverSelectionTimeoutMS: 3000,
+      connectTimeoutMS: 3000,
     };
     globalThis.mongooseCache!.promise = mongoose
       .connect(MONGODB_URI, opts)
-      .then((m) => m);
+      .then((m) => m)
+      .catch((err) => {
+        globalThis.mongooseCache!.promise = null;
+        throw err;
+      });
   }
   globalThis.mongooseCache!.conn = await globalThis.mongooseCache!.promise;
   return globalThis.mongooseCache!.conn;

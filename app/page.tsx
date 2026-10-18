@@ -100,61 +100,106 @@ const IMG = {
   ],
 };
 
-async function getSiteData(): Promise<SiteData> {
-  await connectDB();
-  const s = await getSettings();
-  const servicios: SiteService[] = (s.services || []).map(
-    (sv: { name: string; price: number; duration: number }) => ({
-      nombre: sv.name || "Servicio",
-      precio: sv.price || 0,
-      duracion: sv.duration || 30,
-    })
-  );
-  const horarios: SiteDay[] = (s.days || [])
-    .filter((d: { enabled: boolean }) => d.enabled)
-    .map((d: { day: number; open: string; close: string }) => ({
-      dia: DAY_NAMES[d.day] || "",
-      horario: `${d.open} - ${d.close}`,
-    }));
-
-  const profesionalesDb: SiteProfesional[] = (s.profesionales || []).map(
-    (p: { nombre?: string; rol?: string; img?: string; tags?: string[] }) => ({
-      nombre: p.nombre || "",
-      rol: p.rol || "",
-      img: p.img || "",
-      tags: p.tags || [],
-    })
-  );
-
+function fallbackSiteData(): SiteData {
   return {
-    nombre: s.barberName || "Barbería",
-    slogan: s.slogan || "Tu estilo, nuestra pasión",
-    heroTitle1: s.heroTitle1 || "Tu Estilo,",
-    heroTitle2: s.heroTitle2 || "Nuestra Pasión",
+    nombre: "Barbería Los Tilos",
+    slogan: "Tu estilo, nuestra pasión",
+    heroTitle1: "Tu Estilo,",
+    heroTitle2: "Nuestra Pasión",
     heroDescription:
-      s.heroDescription ||
       "Cortes modernos, degradados impecables y una experiencia premium que te hace volver.",
-    aboutTitle: s.aboutTitle || "Más que un corte,",
-    aboutTitle2: s.aboutTitle2 || "una experiencia",
+    aboutTitle: "Más que un corte,",
+    aboutTitle2: "una experiencia",
     aboutText:
-      s.aboutText ||
       "Combinamos técnica, estilo y calidez para que cada visita sea única.",
-    whatsapp: s.whatsapp || "5491100000000",
-    instagram: s.instagram || "#",
-    facebook: s.facebook || "#",
-    email: s.email || "contacto@barberia.com",
-    direccion: s.direccion || "Av. Ejemplo 1234, Ciudad",
-    mapaQuery: s.mapaQuery || "Av.+Ejemplo+1234,+Ciudad",
-    imgHero: s.imgHero || IMG.hero,
-    imgAbout: s.imgAbout || IMG.about,
-    imgReservar: s.imgReservar || IMG.reservar,
-    imgGaleria:
-      s.imgGaleria && s.imgGaleria.length > 0 ? s.imgGaleria : IMG.galeria,
-    profesionales: profesionalesDb.length > 0 ? profesionalesDb : IMG.profesionales,
+    whatsapp: "5491100000000",
+    instagram: "#",
+    facebook: "#",
+    email: "contacto@barberia.com",
+    direccion: "Av. Ejemplo 1234, Ciudad",
+    mapaQuery: "Av.+Ejemplo+1234,+Ciudad",
+    imgHero: IMG.hero,
+    imgAbout: IMG.about,
+    imgReservar: IMG.reservar,
+    imgGaleria: IMG.galeria,
+    profesionales: IMG.profesionales,
     reservarUrl: "/reservar",
-    servicios,
-    horarios,
+    servicios: [
+      { nombre: "Corte de cabello", precio: 5000, duracion: 30 },
+      { nombre: "Barba", precio: 3000, duracion: 20 },
+      { nombre: "Corte y barba", precio: 7000, duracion: 40 },
+    ],
+    horarios: [
+      { dia: "Lunes", horario: "09:00 - 20:00" },
+      { dia: "Martes", horario: "09:00 - 20:00" },
+      { dia: "Miércoles", horario: "09:00 - 20:00" },
+      { dia: "Jueves", horario: "09:00 - 20:00" },
+      { dia: "Viernes", horario: "09:00 - 20:00" },
+      { dia: "Sábado", horario: "09:00 - 20:00" },
+    ],
   };
+}
+
+async function getSiteData(): Promise<SiteData> {
+  try {
+    await connectDB();
+    const s = await getSettings();
+    const servicios: SiteService[] = (s.services || []).map(
+      (sv: { name: string; price: number; duration: number }) => ({
+        nombre: sv.name || "Servicio",
+        precio: sv.price || 0,
+        duracion: sv.duration || 30,
+      })
+    );
+    const horarios: SiteDay[] = (s.days || [])
+      .filter((d: { enabled: boolean }) => d.enabled)
+      .map((d: { day: number; open: string; close: string }) => ({
+        dia: DAY_NAMES[d.day] || "",
+        horario: `${d.open} - ${d.close}`,
+      }));
+
+    const profesionalesDb: SiteProfesional[] = (s.profesionales || []).map(
+      (p: { nombre?: string; rol?: string; img?: string; tags?: string[] }) => ({
+        nombre: p.nombre || "",
+        rol: p.rol || "",
+        img: p.img || "",
+        tags: p.tags || [],
+      })
+    );
+
+    return {
+      nombre: s.barberName || "Barbería",
+      slogan: s.slogan || "Tu estilo, nuestra pasión",
+      heroTitle1: s.heroTitle1 || "Tu Estilo,",
+      heroTitle2: s.heroTitle2 || "Nuestra Pasión",
+      heroDescription:
+        s.heroDescription ||
+        "Cortes modernos, degradados impecables y una experiencia premium que te hace volver.",
+      aboutTitle: s.aboutTitle || "Más que un corte,",
+      aboutTitle2: s.aboutTitle2 || "una experiencia",
+      aboutText:
+        s.aboutText ||
+        "Combinamos técnica, estilo y calidez para que cada visita sea única.",
+      whatsapp: s.whatsapp || "5491100000000",
+      instagram: s.instagram || "#",
+      facebook: s.facebook || "#",
+      email: s.email || "contacto@barberia.com",
+      direccion: s.direccion || "Av. Ejemplo 1234, Ciudad",
+      mapaQuery: s.mapaQuery || "Av.+Ejemplo+1234,+Ciudad",
+      imgHero: s.imgHero || IMG.hero,
+      imgAbout: s.imgAbout || IMG.about,
+      imgReservar: s.imgReservar || IMG.reservar,
+      imgGaleria:
+        s.imgGaleria && s.imgGaleria.length > 0 ? s.imgGaleria : IMG.galeria,
+      profesionales: profesionalesDb.length > 0 ? profesionalesDb : IMG.profesionales,
+      reservarUrl: "/reservar",
+      servicios,
+      horarios,
+    };
+  } catch (error) {
+    console.error("Site data unavailable; rendering fallback content", error);
+    return fallbackSiteData();
+  }
 }
 
 function serviceImage(name: string): string {
