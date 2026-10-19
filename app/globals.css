@@ -148,10 +148,6 @@ input[type="time"] {
   border-radius: 999px;
 }
 
-.st.pending {
-  color: var(--accent);
-  background: rgba(212, 168, 83, 0.14);
-}
 .st.confirmed {
   color: var(--blue);
   background: rgba(96, 165, 250, 0.12);
@@ -166,7 +162,7 @@ input[type="time"] {
 }
 
 .booking-cancelled {
-  opacity: 0.5;
+  opacity: 0.8;
 }
 
 @media (max-width: 640px) {

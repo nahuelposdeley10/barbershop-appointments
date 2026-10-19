@@ -11,7 +11,7 @@ import {
   AdminBooking,
   Settings,
 } from "@/lib/client-api";
-import { BarberPole } from "../booking/BarberIcons";
+import { BarberPole, ServiceIcon } from "../booking/BarberIcons";
 import Navbar from "../Navbar";
 
 const DAY_NAMES = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
@@ -21,11 +21,22 @@ const MONTH_NAMES = [
 ];
 
 const STATUS_LABELS: Record<string, string> = {
-  pending: "Pendiente",
-  confirmed: "Confirmado",
+  confirmed: "Activo",
   cancelled: "Cancelado",
   done: "Completado",
 };
+
+/** Clase de color del chip. Los turnos viejos ("pending") se ven como activos. */
+function statusClass(status: string) {
+  if (status === "cancelled") return "cancelled";
+  if (status === "done") return "done";
+  return "confirmed";
+}
+
+/** "1 turno" / "3 turnos" */
+function plural(n: number, word: string) {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
 
 function localDateStr(d: Date) {
   const y = d.getFullYear();
@@ -69,6 +80,11 @@ export default function AdminPage({
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [newBlockDate, setNewBlockDate] = useState("");
+  const [checkingBlock, setCheckingBlock] = useState(false);
+  const [blockWarning, setBlockWarning] = useState<{
+    date: string;
+    ids: string[];
+  } | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -166,14 +182,77 @@ export default function AdminPage({
     });
   }
 
-  function addBlockDate() {
-    if (!draft || !newBlockDate) return;
-    if (draft.unavailableDates.includes(newBlockDate)) return;
+  function addBlockDate(date: string) {
+    if (!draft || !date) return;
+    if (draft.unavailableDates.includes(date)) return;
     setDraft({
       ...draft,
-      unavailableDates: [...draft.unavailableDates, newBlockDate].sort(),
+      unavailableDates: [...draft.unavailableDates, date].sort(),
     });
     setNewBlockDate("");
+    setBlockWarning(null);
+    setError("");
+  }
+
+  /** Antes de bloquear, avisa si ese día ya tiene turnos activos. */
+  async function requestBlockDate() {
+    if (!draft || !newBlockDate) return;
+    const date = newBlockDate;
+    if (draft.unavailableDates.includes(date)) {
+      setError("Ese día ya está en la lista de días sin atención.");
+      return;
+    }
+    setCheckingBlock(true);
+    setBlockWarning(null);
+    setError("");
+    try {
+      const list = await adminGetBookings(token, { date });
+      const active = list.filter((b) => b.status !== "cancelled" && b.status !== "done");
+      if (active.length === 0) {
+        addBlockDate(date);
+        return;
+      }
+      setBlockWarning({
+        date,
+        ids: active.map((b) => b._id),
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos revisar los turnos de ese día");
+    } finally {
+      setCheckingBlock(false);
+    }
+  }
+
+  /** Bloquea el día y cancela de paso los turnos que ya tenía. */
+  async function blockDateAndCancelBookings() {
+    if (!blockWarning) return;
+    const { date: blockedDate, ids } = blockWarning;
+    setCheckingBlock(true);
+    setError("");
+    let failures = 0;
+    for (const id of ids) {
+      try {
+        await adminUpdateBooking(token, id, "cancelled");
+      } catch {
+        failures += 1;
+      }
+    }
+    setCheckingBlock(false);
+    if (failures > 0) {
+      setError(
+        `No se pudieron cancelar ${plural(failures, "turno")}. Probá de nuevo o bloqueá el día sin cancelarlos.`
+      );
+      return;
+    }
+    addBlockDate(blockedDate);
+    if (blockedDate === date) {
+      try {
+        const list = await adminGetBookings(token, { date, status: status || undefined });
+        setBookings(list);
+      } catch {
+        // La agenda se refresca sola al cambiar de día.
+      }
+    }
   }
 
   async function handleUploadImage(
@@ -242,6 +321,17 @@ export default function AdminPage({
     }
   }
 
+  /** Deja el servicio sin foto: vuelve a mostrarse el ícono. */
+  function clearServiceImage(index: number) {
+    if (!draft) return;
+    setDraft({
+      ...draft,
+      services: draft.services.map((service, i) =>
+        i === index ? { ...service, img: "" } : service
+      ),
+    });
+  }
+
   function updateProfesional(index: number, field: string, value: string | string[]) {
     if (!draft) return;
     const profesionales = draft.profesionales.map((p, i) =>
@@ -300,7 +390,6 @@ export default function AdminPage({
   }
 
   const stats = {
-    pending: bookings.filter((b) => b.status === "pending").length,
     confirmed: bookings.filter((b) => b.status === "confirmed").length,
     done: bookings.filter((b) => b.status === "done").length,
     cancelled: bookings.filter((b) => b.status === "cancelled").length,
@@ -313,6 +402,16 @@ export default function AdminPage({
     );
   });
 
+  // Días sin atención: qué está guardado y qué quedó pendiente en el borrador.
+  const savedBlocked = settings?.unavailableDates ?? [];
+  const draftBlocked = draft?.unavailableDates ?? [];
+  const pendingAdds = draftBlocked.filter((d) => !savedBlocked.includes(d));
+  const pendingRemovals = savedBlocked.filter((d) => !draftBlocked.includes(d));
+
+  // ¿Quedó algo en el borrador sin guardar? (avisa junto a los botones de guardar)
+  const sinGuardar =
+    Boolean(draft && settings) && JSON.stringify(draft) !== JSON.stringify(settings);
+
   return (
     <div className="booking-bg">
       <Navbar
@@ -323,7 +422,7 @@ export default function AdminPage({
 
         <BarberPole />
 
-        <nav className="flex flex-wrap gap-2 border-b border-[var(--border)] pb-3">
+        <nav className="-mx-5 px-5 flex gap-2 overflow-x-auto border-b border-[var(--border)] pb-3 sm:mx-0 sm:px-0 sm:flex-wrap sm:overflow-visible [scrollbar-width:none]">
           <Tab active={tab === "agenda"} onClick={() => setTab("agenda")}>
             Agenda de turnos
           </Tab>
@@ -346,38 +445,27 @@ export default function AdminPage({
 
         {tab === "agenda" && (
           <>
-            <section className="flex flex-wrap items-end gap-3 bg-[var(--card)] border border-[var(--border)] rounded-2xl p-[22px]">
-              <button
-                type="button"
-                className="px-4 py-3 rounded-xl bg-[var(--card-2)] border border-[var(--border)] font-bold text-sm hover:border-[var(--accent)]"
-                onClick={() => setDate(today)}
-              >
-                Hoy
-              </button>
-              <Field label="Fecha">
-                <input
-                  type="date"
-                  className="input"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                />
-              </Field>
-              <Field label="Estado">
-                <select
-                  className="input"
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
+            <section className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 sm:p-[22px]">
+              <div className="flex items-end gap-2 sm:flex-1 sm:min-w-[220px]">
+                <Field label="Fecha" className="flex-1">
+                  <input
+                    type="date"
+                    className="input"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                  />
+                </Field>
+                <button
+                  type="button"
+                  className="shrink-0 px-4 py-3 rounded-xl bg-[var(--card-2)] border border-[var(--border)] font-bold text-sm hover:border-[var(--accent)]"
+                  onClick={() => setDate(today)}
                 >
-                  <option value="">Todos</option>
-                  <option value="pending">Pendientes</option>
-                  <option value="confirmed">Confirmados</option>
-                  <option value="done">Completados</option>
-                  <option value="cancelled">Cancelados</option>
-                </select>
-              </Field>
-              <Field label="Buscar">
+                  Hoy
+                </button>
+              </div>
+              <Field label="Buscar" className="sm:min-w-[200px]">
                 <input
-                  className="input min-w-[180px]"
+                  className="input"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Nombre, teléfono o servicio"
@@ -386,17 +474,35 @@ export default function AdminPage({
               </Field>
             </section>
 
-            {status === "" && (
-              <div className="flex flex-wrap gap-2">
-                <Stat cls="text-accent border-accent/40" label={`${stats.pending} pendientes`} />
-                <Stat cls="text-blue-400 border-blue-400/40" label={`${stats.confirmed} confirmados`} />
-                <Stat cls="text-emerald-400 border-emerald-400/40" label={`${stats.done} completados`} />
-                <Stat cls="text-[var(--muted)] border-[var(--muted)]/40" label={`${stats.cancelled} cancelados`} />
-              </div>
-            )}
+            <div className="-mx-5 px-5 flex gap-2 overflow-x-auto pb-1 sm:mx-0 sm:px-0 sm:flex-wrap sm:overflow-visible sm:pb-0 [scrollbar-width:none]">
+              <Stat
+                cls="text-[var(--text)] border-[var(--border)]"
+                label={status === "" ? `Todos (${bookings.length})` : "Todos"}
+                active={status === ""}
+                onClick={() => setStatus("")}
+              />
+              <Stat
+                cls="text-blue-400 border-blue-400/40"
+                label={plural(stats.confirmed, "activo")}
+                active={status === "confirmed"}
+                onClick={() => setStatus(status === "confirmed" ? "" : "confirmed")}
+              />
+              <Stat
+                cls="text-emerald-400 border-emerald-400/40"
+                label={plural(stats.done, "completado")}
+                active={status === "done"}
+                onClick={() => setStatus(status === "done" ? "" : "done")}
+              />
+              <Stat
+                cls="text-[var(--muted)] border-[var(--muted)]/40"
+                label={plural(stats.cancelled, "cancelado")}
+                active={status === "cancelled"}
+                onClick={() => setStatus(status === "cancelled" ? "" : "cancelled")}
+              />
+            </div>
 
-            <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-[22px] flex flex-col gap-3.5">
-              <h2 className="text-[17px] font-bold">
+            <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 sm:p-[22px] flex flex-col gap-3.5">
+              <h2 className="text-[16px] sm:text-[17px] font-bold">
                 {formatDate(date)}
                 {status !== "" && (
                   <span className="text-[var(--muted)]"> · {STATUS_LABELS[status]}</span>
@@ -413,41 +519,40 @@ export default function AdminPage({
                   {visibleBookings.map((b) => (
                     <li
                       key={b._id}
-                      className={`grid grid-cols-[64px_1fr_auto] gap-3.5 items-start bg-[var(--bg-soft)] border border-[var(--border)] rounded-[14px] p-3.5 ${
+                      className={`flex flex-col gap-2.5 sm:grid sm:grid-cols-[64px_1fr_auto] sm:gap-3.5 sm:items-start bg-[var(--bg-soft)] border border-[var(--border)] rounded-[14px] p-3.5 ${
                         b.status === "cancelled" ? "booking-cancelled" : ""
                       }`}
                     >
-                      <div className="text-lg font-extrabold text-accent pt-0.5">
-                        {b.time}
+                      <div className="flex items-center justify-between gap-2 sm:block">
+                        <span className="text-lg font-extrabold text-accent sm:pt-0.5">
+                          {b.time}
+                        </span>
+                        <span className={`st ${statusClass(b.status)} sm:hidden`}>{STATUS_LABELS[b.status] || "Activo"}</span>
                       </div>
                       <div className="flex flex-col gap-[3px] min-w-0">
                         <div className="flex gap-2.5 items-center flex-wrap text-sm">
                           <strong>{b.name}</strong>
-                          <span className={`st ${b.status}`}>{STATUS_LABELS[b.status]}</span>
+                          <span className={`st ${statusClass(b.status)} hidden sm:inline-block`}>
+                            {STATUS_LABELS[b.status] || "Activo"}
+                          </span>
                         </div>
-                        <div className="flex gap-2.5 items-center flex-wrap text-sm text-[var(--muted)]">
+                        <div className="flex gap-x-2 gap-y-1 items-center flex-wrap text-[13px] sm:text-sm text-[var(--muted)]">
                           <span>{b.service}</span>
+                          <span aria-hidden="true">·</span>
                           <span>${Number(b.price || 0).toLocaleString("es-AR")}</span>
-                        </div>
-                        <div className="flex gap-2.5 items-center flex-wrap text-sm text-[var(--muted)]">
-                          <span>{b.phone}</span>
+                          <span aria-hidden="true">·</span>
                           <span>{b.duration} min</span>
                         </div>
+                        <div className="text-[13px] sm:text-sm text-[var(--muted)]">
+                          {b.phone}
+                        </div>
                       </div>
-                      <div className="flex flex-col gap-1.5 items-end">
+                      <div className="flex flex-wrap gap-2 sm:flex-col sm:items-end sm:gap-1.5">
                         {b.status !== "cancelled" && b.status !== "done" && (
                           <>
-                            {b.status !== "confirmed" && (
-                              <SmallBtn
-                                cls="bg-emerald-500/12 text-emerald-400 border-emerald-500/40"
-                                onClick={() => changeStatus(b._id, "confirmed")}
-                              >
-                                Confirmar
-                              </SmallBtn>
-                            )}
                             {b.status !== "done" && (
                               <SmallBtn
-                                cls="bg-blue-500/12 text-blue-400 border-blue-500/40"
+                                cls="flex-1 sm:flex-none bg-blue-500/12 text-blue-400 border-blue-500/40"
                                 onClick={() => changeStatus(b._id, "done")}
                               >
                                 Completado
@@ -457,14 +562,14 @@ export default function AdminPage({
                         )}
                         {b.status !== "cancelled" && b.status !== "done" && (
                           <SmallBtn
-                            cls="bg-[var(--card-2)] text-[var(--muted)] border-[var(--border)]"
+                            cls="flex-1 sm:flex-none bg-[var(--card-2)] text-[var(--muted)] border-[var(--border)]"
                             onClick={() => changeStatus(b._id, "cancelled")}
                           >
                             Cancelar
                           </SmallBtn>
                         )}
                         <SmallBtn
-                          cls="bg-red-500/12 text-[var(--red)] border-red-500/40"
+                          cls="flex-1 sm:flex-none bg-red-500/12 text-[var(--red)] border-red-500/40"
                           onClick={() => removeBooking(b._id, b.name)}
                         >
                           Eliminar
@@ -500,7 +605,9 @@ export default function AdminPage({
 
             <h3 className="text-[15px] font-extrabold text-accent mt-1.5">Servicios</h3>
             <p className="text-[var(--muted)] text-[13px]">
-              Elegí una foto por servicio: se verá en la portada y se guarda al actualizar el sitio.
+              La foto de cada servicio es opcional: se ve en la portada y en la tarjeta
+              del paso 1 de la reserva. Si la dejás vacía, se muestra el ícono del
+              servicio. Se guarda con «Guardar configuración».
             </p>
             <div className="flex flex-col gap-2.5">
               {draft.services.map((s, i) => (
@@ -515,31 +622,40 @@ export default function AdminPage({
                         <img
                           src={s.img}
                           alt={s.name || "Servicio"}
-                          className="h-14 w-14 shrink-0 rounded-lg object-cover"
+                          className="h-12 w-12 shrink-0 rounded-[14px] object-cover"
                         />
                       ) : (
-                        <span className="grid h-14 w-14 shrink-0 place-items-center rounded-lg bg-[var(--card-2)] text-xl text-[var(--muted)]">
-                          ✂
-                        </span>
+                        <ServiceIcon service={s.name} />
                       )}
-                      <label
-                        className="min-w-0 cursor-pointer text-xs font-bold text-[var(--text)]"
-                        style={{ pointerEvents: uploading ? "none" : "auto", opacity: uploading ? 0.5 : 1 }}
-                      >
-                        <span className="inline-flex rounded-lg border border-[var(--border)] bg-[var(--card)] px-2.5 py-1.5 hover:border-accent">
-                          {uploading ? "Subiendo…" : s.img ? "Cambiar foto" : "Subir foto"}
-                        </span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) handleUploadService(file, i);
-                            e.target.value = "";
-                          }}
-                        />
-                      </label>
+                      <span className="flex min-w-0 flex-wrap items-center gap-2">
+                        <label
+                          className="cursor-pointer text-xs font-bold text-[var(--text)]"
+                          style={{ pointerEvents: uploading ? "none" : "auto", opacity: uploading ? 0.5 : 1 }}
+                        >
+                          <span className="inline-flex rounded-lg border border-[var(--border)] bg-[var(--card)] px-2.5 py-1.5 hover:border-accent">
+                            {uploading ? "Subiendo…" : s.img ? "Cambiar foto" : "Subir foto"}
+                          </span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) handleUploadService(file, i);
+                              e.target.value = "";
+                            }}
+                          />
+                        </label>
+                        {s.img && (
+                          <button
+                            type="button"
+                            className="btn-small-red"
+                            onClick={() => clearServiceImage(i)}
+                          >
+                            Quitar foto
+                          </button>
+                        )}
+                      </span>
                     </div>
                     <button
                       type="button"
@@ -666,47 +782,134 @@ export default function AdminPage({
             </p>
 
             <h3 className="text-[15px] font-extrabold text-accent mt-1.5">Días sin atención</h3>
-            <div className="flex gap-2.5 items-center">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2.5">
               <input
                 type="date"
                 className="input"
                 value={newBlockDate}
                 min={today}
-                onChange={(e) => setNewBlockDate(e.target.value)}
+                onChange={(e) => {
+                  setNewBlockDate(e.target.value);
+                  setBlockWarning(null);
+                }}
               />
               <button
                 type="button"
-                className="px-4 py-3 rounded-xl font-bold bg-gradient-to-b from-[var(--accent)] to-[var(--accent-strong)] text-[#1a1406]"
-                onClick={addBlockDate}
+                className="px-4 py-3 rounded-xl font-bold bg-gradient-to-b from-[var(--accent)] to-[var(--accent-strong)] text-[#1a1406] disabled:opacity-60"
+                onClick={requestBlockDate}
+                disabled={checkingBlock || !newBlockDate}
               >
-                Bloquear día
+                {checkingBlock ? "Revisando…" : "Bloquear día"}
               </button>
             </div>
+
+            {blockWarning && (
+              <div
+                role="alert"
+                className="rounded-xl border border-amber-500/45 bg-amber-500/10 p-3.5 flex flex-col gap-3"
+              >
+                <p className="text-sm leading-6">
+                  <strong>{formatDate(blockWarning.date)}</strong> ya tiene{" "}
+                  <strong>{plural(blockWarning.ids.length, "turno")}</strong>. Si
+                  bloqueás el día, esos turnos <strong>no se cancelan solos</strong>.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="px-3.5 py-2 rounded-xl text-[13px] font-bold bg-red-500/12 text-[var(--red)] border border-red-500/40"
+                    onClick={blockDateAndCancelBookings}
+                    disabled={checkingBlock}
+                  >
+                    Bloquear y cancelar los turnos
+                  </button>
+                  <button
+                    type="button"
+                    className="px-3.5 py-2 rounded-xl text-[13px] font-bold bg-gradient-to-b from-[var(--accent)] to-[var(--accent-strong)] text-[#1a1406] disabled:opacity-60"
+                    onClick={() => addBlockDate(blockWarning.date)}
+                    disabled={checkingBlock}
+                  >
+                    Bloquear igual
+                  </button>
+                  <button
+                    type="button"
+                    className="px-3.5 py-2 rounded-xl text-[13px] font-bold bg-[var(--card-2)] text-[var(--muted)] border border-[var(--border)]"
+                    onClick={() => setBlockWarning(null)}
+                    disabled={checkingBlock}
+                  >
+                    Mejor no
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="flex flex-wrap gap-2">
-              {draft.unavailableDates.map((d) => (
+              {pendingRemovals.map((d) => (
                 <span
-                  key={d}
-                  className="inline-flex items-center gap-2 bg-[var(--card-2)] border border-[var(--border)] px-2.5 py-1.5 rounded-full text-[13px]"
+                  key={`quitar-${d}`}
+                  className="inline-flex items-center gap-2 bg-[var(--card-2)] border border-dashed border-[var(--border)] px-2.5 py-1.5 rounded-full text-[13px] text-[var(--muted)] line-through"
                 >
                   {formatDate(d)}
                   <button
                     type="button"
-                    className="text-[var(--muted)] text-[15px] leading-none p-0 hover:text-[var(--red)]"
-                    onClick={() =>
-                      setDraft({
-                        ...draft,
-                        unavailableDates: draft.unavailableDates.filter((x) => x !== d),
-                      })
-                    }
+                    className="text-[13px] leading-none p-0 text-[var(--muted)] hover:text-[var(--text)]"
+                    title="Volver a bloquearlo"
+                    onClick={() => addBlockDate(d)}
                   >
-                    ×
+                    ↺
                   </button>
                 </span>
               ))}
-              {draft.unavailableDates.length === 0 && (
+              {draft.unavailableDates.map((d) => {
+                const sinGuardar = !savedBlocked.includes(d);
+                return (
+                  <span
+                    key={d}
+                    className={`inline-flex items-center gap-2 bg-[var(--card-2)] border px-2.5 py-1.5 rounded-full text-[13px] ${
+                      sinGuardar ? "border-accent/60 text-accent" : "border-[var(--border)]"
+                    }`}
+                  >
+                    {formatDate(d)}
+                    {sinGuardar && (
+                      <span className="text-[10.5px] font-extrabold uppercase tracking-wide text-accent">
+                        sin guardar
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      className="text-[var(--muted)] text-[15px] leading-none p-0 hover:text-[var(--red)]"
+                      title="Quitar de la lista"
+                      onClick={() =>
+                        setDraft({
+                          ...draft,
+                          unavailableDates: draft.unavailableDates.filter((x) => x !== d),
+                        })
+                      }
+                    >
+                      ×
+                    </button>
+                  </span>
+                );
+              })}
+              {draft.unavailableDates.length === 0 && pendingRemovals.length === 0 && (
                 <span className="text-[var(--muted)] text-[13px]">Sin días bloqueados.</span>
               )}
             </div>
+
+            <p className="text-[var(--muted)] text-[13px]">
+              Los cambios en los días sin atención se aplican al tocar{" "}
+              <strong className="text-[var(--text)]">Guardar cambios</strong>, al final del formulario.
+              {(pendingAdds.length > 0 || pendingRemovals.length > 0) && (
+                <span className="block mt-1 font-semibold text-accent">
+                  Sin guardar:{" "}
+                  {[
+                    pendingAdds.length ? `+${plural(pendingAdds.length, "día bloqueado")}` : "",
+                    pendingRemovals.length ? `−${plural(pendingRemovals.length, "día liberado")}` : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              )}
+            </p>
 
             <h3 className="text-[15px] font-extrabold text-accent mt-1.5">Acceso</h3>
             <Field label="Email de acceso">
@@ -736,13 +939,20 @@ export default function AdminPage({
             {error && <p className="text-[var(--red)] font-semibold">{error}</p>}
             {saved && <p className="text-emerald-400 font-semibold">Configuración guardada ✓</p>}
 
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-5 py-3.5 rounded-xl font-bold bg-gradient-to-b from-[var(--accent)] to-[var(--accent-strong)] text-[#1a1406] disabled:opacity-60"
-            >
-              {saving ? "Guardando…" : "Guardar configuración"}
-            </button>
+            <div className="sticky bottom-3 z-10 flex flex-wrap items-center gap-3 bg-[var(--card)]">
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-5 py-3.5 rounded-xl font-bold bg-gradient-to-b from-[var(--accent)] to-[var(--accent-strong)] text-[#1a1406] disabled:opacity-60"
+              >
+                {saving ? "Guardando…" : "Guardar configuración"}
+              </button>
+              {sinGuardar && (
+                <span className="text-[12.5px] font-bold text-amber-400">
+                  ● Cambios sin guardar
+                </span>
+              )}
+            </div>
           </form>
         )}
 
@@ -893,13 +1103,20 @@ export default function AdminPage({
               </p>
             )}
 
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-5 py-3.5 rounded-xl font-bold bg-gradient-to-b from-[var(--accent)] to-[var(--accent-strong)] text-[#1a1406] disabled:opacity-60"
-            >
-              {saving ? "Guardando…" : "Guardar sitio web"}
-            </button>
+            <div className="sticky bottom-3 z-10 flex flex-wrap items-center gap-3 bg-[var(--card)]">
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-5 py-3.5 rounded-xl font-bold bg-gradient-to-b from-[var(--accent)] to-[var(--accent-strong)] text-[#1a1406] disabled:opacity-60"
+              >
+                {saving ? "Guardando…" : "Guardar sitio web"}
+              </button>
+              {sinGuardar && (
+                <span className="text-[12.5px] font-bold text-amber-400">
+                  ● Cambios sin guardar
+                </span>
+              )}
+            </div>
           </form>
         )}
 
@@ -942,6 +1159,69 @@ export default function AdminPage({
                 onChange={(file) => handleUploadImage(file, "imgReservar", "reservar")}
                 onClear={() => setDraft({ ...draft, imgReservar: "" })}
               />
+            </div>
+
+            <h3 className="text-[15px] font-extrabold text-accent mt-1">Fotos de servicios</h3>
+            <p className="text-[var(--muted)] text-[13px]">
+              Opcional, una por servicio. Se muestra en la portada y en la tarjeta del
+              paso 1 de la reserva. Si la dejás vacía, se usa el ícono del servicio.
+              Se guarda con «Guardar imágenes».
+            </p>
+            <div className="flex flex-col gap-2.5">
+              {draft.services.map((s, i) => (
+                <div
+                  key={i}
+                  className="flex flex-wrap items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] p-3"
+                >
+                  {s.img ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={s.img}
+                      alt={s.name || "Servicio"}
+                      className="h-12 w-12 shrink-0 rounded-[14px] object-cover"
+                    />
+                  ) : (
+                    <ServiceIcon service={s.name} />
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <strong className="block truncate text-sm font-semibold">
+                      {s.name || `Servicio ${i + 1}`}
+                    </strong>
+                    <span className="text-[12px] text-[var(--muted)]">
+                      {s.img ? "Foto cargada" : "Sin foto · se muestra el ícono"}
+                    </span>
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <label
+                      className="cursor-pointer text-xs font-bold text-[var(--text)]"
+                      style={{ pointerEvents: uploading ? "none" : "auto", opacity: uploading ? 0.5 : 1 }}
+                    >
+                      <span className="inline-flex rounded-lg border border-[var(--border)] bg-[var(--card)] px-2.5 py-1.5 hover:border-accent">
+                        {uploading ? "Subiendo…" : s.img ? "Cambiar foto" : "Subir foto"}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleUploadService(file, i);
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                    {s.img && (
+                      <button
+                        type="button"
+                        className="btn-small-red"
+                        onClick={() => clearServiceImage(i)}
+                      >
+                        Quitar foto
+                      </button>
+                    )}
+                  </span>
+                </div>
+              ))}
             </div>
 
             <h3 className="text-[15px] font-extrabold text-accent mt-1">Galería</h3>
@@ -1068,14 +1348,21 @@ export default function AdminPage({
               <p className="text-emerald-400 font-semibold">Imágenes guardadas ✓</p>
             )}
 
-            <button
-              type="button"
-              disabled={saving || uploading}
-              onClick={saveSettings as unknown as () => void}
-              className="px-5 py-3.5 rounded-xl font-bold bg-gradient-to-b from-[var(--accent)] to-[var(--accent-strong)] text-[#1a1406] disabled:opacity-60"
-            >
-              {saving ? "Guardando…" : "Guardar imágenes"}
-            </button>
+            <div className="sticky bottom-3 z-10 flex flex-wrap items-center gap-3 bg-[var(--card)]">
+              <button
+                type="button"
+                disabled={saving || uploading}
+                onClick={saveSettings as unknown as () => void}
+                className="px-5 py-3.5 rounded-xl font-bold bg-gradient-to-b from-[var(--accent)] to-[var(--accent-strong)] text-[#1a1406] disabled:opacity-60"
+              >
+                {saving ? "Guardando…" : "Guardar imágenes"}
+              </button>
+              {sinGuardar && (
+                <span className="text-[12.5px] font-bold text-amber-400">
+                  ● Cambios sin guardar
+                </span>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -1096,7 +1383,7 @@ function Tab({
     <button
       type="button"
       onClick={onClick}
-      className={`px-3.5 py-2 rounded-xl text-[15px] font-bold ${
+      className={`shrink-0 px-3.5 py-2 rounded-xl text-[14px] sm:text-[15px] font-bold ${
         active
           ? "bg-accent/15 text-accent"
           : "bg-transparent text-[var(--muted)] hover:text-[var(--text)]"
@@ -1107,9 +1394,17 @@ function Tab({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+  className = "",
+}: {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <label className="flex flex-col gap-1.5 font-semibold text-sm">
+    <label className={`flex flex-col gap-1.5 font-semibold text-sm min-w-0 ${className}`}>
       <span>{label}</span>
       {children}
     </label>
@@ -1186,13 +1481,28 @@ function TagsEditor({
   );
 }
 
-function Stat({ label, cls }: { label: string; cls: string }) {
+function Stat({
+  label,
+  cls,
+  onClick,
+  active,
+}: {
+  label: string;
+  cls: string;
+  onClick?: () => void;
+  active?: boolean;
+}) {
+  const base = `text-[13px] font-bold px-3 py-1.5 rounded-full border bg-[var(--card)] whitespace-nowrap ${cls}`;
+  if (!onClick) return <span className={base}>{label}</span>;
   return (
-    <span
-      className={`text-[13px] font-bold px-3 py-1.5 rounded-full border bg-[var(--card)] ${cls}`}
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`${base} ${active ? "border-[var(--accent)] shadow-[0_0_0_3px_rgba(212,168,83,0.10)]" : ""}`}
     >
       {label}
-    </span>
+    </button>
   );
 }
 
@@ -1209,7 +1519,7 @@ function SmallBtn({
     <button
       type="button"
       onClick={onClick}
-      className={`px-2.5 py-1.5 text-[12.5px] rounded-lg font-bold border ${cls}`}
+      className={`px-3 py-2 sm:px-2.5 sm:py-1.5 text-[12.5px] rounded-lg font-bold border ${cls}`}
     >
       {children}
     </button>
