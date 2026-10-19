@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
       if (!d) return Response.json({ error: "Fecha inválida" }, { status: 400 });
       filter.date = d;
     }
-    if (status && ["pending", "confirmed", "cancelled", "done"].includes(status)) {
+    if (status && ["confirmed", "cancelled", "done"].includes(status)) {
       filter.status = status;
     }
     const bookings = await Booking.find(filter).sort({ date: 1, time: 1 });

@@ -135,7 +135,7 @@ export async function POST(req: NextRequest) {
             price: serviceCfg.price,
             date: d,
             time: cleanTime,
-            status: "pending",
+            status: "confirmed",
             manageTokenHash: manageToken.hash,
           }],
           { session }

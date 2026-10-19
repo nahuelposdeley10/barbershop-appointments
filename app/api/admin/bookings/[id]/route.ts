@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-const STATUS = ["pending", "confirmed", "cancelled", "done"];
+const STATUS = ["confirmed", "cancelled", "done"];
 
 export async function PATCH(req: NextRequest, { params }: Ctx) {
   try {

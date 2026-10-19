@@ -11,8 +11,8 @@ const bookingSchema = new mongoose.Schema(
     time: { type: String, required: true },
     status: {
       type: String,
-      enum: ["pending", "confirmed", "cancelled", "done"],
-      default: "pending",
+      enum: ["confirmed", "cancelled", "done"],
+      default: "confirmed",
     },
     manageTokenHash: { type: String, select: false, index: true },
     cancelledAt: { type: Date },
@@ -22,7 +22,7 @@ const bookingSchema = new mongoose.Schema(
 
 bookingSchema.index({ date: 1, time: 1, status: 1 });
 
-export type BookingStatus = "pending" | "confirmed" | "cancelled" | "done";
+export type BookingStatus = "confirmed" | "cancelled" | "done";
 
 export type BookingDoc = {
   _id: string;
