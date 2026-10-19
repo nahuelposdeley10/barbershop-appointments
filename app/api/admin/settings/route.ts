@@ -207,7 +207,10 @@ export async function PUT(req: NextRequest) {
       current.cantidadBarberos = Math.max(1, Math.round(body.cantidadBarberos));
     }
     const account = await getAdminAccount();
-    const requestedEmail = typeof body.adminEmail === "string" ? body.adminEmail : account.email;
+    const requestedEmail =
+      typeof body.adminEmail === "string" && body.adminEmail.trim()
+        ? body.adminEmail
+        : account.email;
     const requestedPassword = typeof body.adminPassword === "string" ? body.adminPassword : "";
     if (Array.isArray(body.unavailableDates)) {
       current.unavailableDates = [
@@ -231,5 +234,6 @@ async function sanitizeSettings(doc: Record<string, unknown>) {
   const plain = typeof candidate.toObject === "function" ? candidate.toObject() : { ...doc };
   delete plain.pin;
   delete plain.pinHash;
-  return { ...plain, ...(await getAdminAccount()), adminPassword: "" };
+  const account = await getAdminAccount();
+  return { ...plain, adminEmail: account.email, adminPassword: "" };
 }
