@@ -61,7 +61,12 @@ export default function RootLayout({
       lang="es"
       className={`${inter.variable} ${playfair.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-zinc-950 text-zinc-100">
+      <body
+        // Silencia atributos que inyectan extensiones del navegador
+        // (ej. ColorZilla agrega cz-shortcut-listen) antes de la hidratación.
+        suppressHydrationWarning
+        className="min-h-full flex flex-col bg-zinc-950 text-zinc-100"
+      >
         {children}
       </body>
     </html>
