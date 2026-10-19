@@ -871,10 +871,6 @@ function Footer({ data }: { data: SiteData }) {
             © {new Date().getFullYear()} {data.nombre}. Todos los derechos reservados.
           </p>
         </div>
-        <div className="flex justify-center gap-4 mt-8 text-xs text-zinc-600">
-          <Link href="/privacidad" className="hover:text-accent">Privacidad</Link>
-          <Link href="/terminos" className="hover:text-accent">Términos de reserva</Link>
-        </div>
       </div>
     </footer>
   );
