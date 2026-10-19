@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import Image from "next/image";
 import {
   createBooking,
@@ -8,11 +8,10 @@ import {
   getManagedBooking,
   getAvailability,
   BookingConfirmation,
-  updateBookingSchedule,
   Service,
   Slot,
 } from "@/lib/client-api";
-import { BarberPole, ServiceIcon } from "./BarberIcons";
+import { BarberPole, ServiceThumb } from "./BarberIcons";
 import ScheduleCalendar from "./ScheduleCalendar";
 import Navbar from "../Navbar";
 
@@ -24,11 +23,31 @@ const MONTH_NAMES = [
 
 const HERO_IMG =
   "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?q=80&w=1400&auto=format&fit=crop";
-const BOOKING_STORAGE_KEY = "barberia:booking-token";
+const TIME_ZONE = "America/Argentina/Buenos_Aires";
+const BOOKINGS_STORAGE_KEY = "barberia:bookings";
+const LEGACY_BOOKING_STORAGE_KEY = "barberia:booking-token";
+const TERMS_STORAGE_KEY = "barberia:terms-accepted";
+
+/** ¿La persona ya aceptó los términos en este dispositivo? */
+function loadTermsAccepted() {
+  try {
+    return window.localStorage.getItem(TERMS_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function persistTermsAccepted() {
+  try {
+    window.localStorage.setItem(TERMS_STORAGE_KEY, "1");
+  } catch {
+    // Si el navegador bloquea el storage, el aviso vuelve a mostrarse la próxima vez.
+  }
+}
 
 function localDateStr(d: Date) {
   const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Argentina/Buenos_Aires",
+    timeZone: TIME_ZONE,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -44,6 +63,163 @@ function formatDate(dateStr: string) {
 
 function currency(n: number) {
   return `$${Number(n || 0).toLocaleString("es-AR")}`;
+}
+
+/** Fecha y hora local de la barbería en formato "YYYY-MM-DD HH:MM" (para comparar). */
+function localDateTimeStr(d: Date) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(d);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}`;
+}
+
+/** Fin del turno (fecha + hora + duración) en el mismo formato local. */
+function bookingEndStr(booking: { date?: string; time?: string; duration?: number }) {
+  const [y, m, d] = (booking.date || "").split("-").map(Number);
+  const [hh, mm] = (booking.time || "").split(":").map(Number);
+  if (![y, m, d, hh, mm].every(Number.isFinite)) return "";
+  const end = new Date(Date.UTC(y, m - 1, d, hh, mm + Math.max(0, Number(booking.duration) || 0)));
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${end.getUTCFullYear()}-${pad(end.getUTCMonth() + 1)}-${pad(end.getUTCDate())} ${pad(end.getUTCHours())}:${pad(end.getUTCMinutes())}`;
+}
+
+function isBookingFinished(booking: { date?: string; time?: string; duration?: number }) {
+  const end = bookingEndStr(booking);
+  return end ? localDateTimeStr(new Date()) >= end : false;
+}
+
+function isBookingActive(booking: BookingConfirmation) {
+  if (booking.status === "cancelled" || booking.status === "done") return false;
+  if (!booking.manageToken || !booking.date || !booking.time) return false;
+  return !isBookingFinished(booking);
+}
+
+function persistBookings(bookings: BookingConfirmation[]) {
+  try {
+    window.localStorage.setItem(BOOKINGS_STORAGE_KEY, JSON.stringify({ bookings }));
+    // La migración terminó cuando el formato nuevo quedó escrito.
+    window.localStorage.removeItem(LEGACY_BOOKING_STORAGE_KEY);
+  } catch {
+    // Si el navegador bloquea el storage, los turnos siguen disponibles en el servidor.
+  }
+}
+
+/** Lee los turnos guardados en el dispositivo (sin modificar el storage). */
+function loadStoredBookings(): BookingConfirmation[] {
+  const raw = window.localStorage.getItem(BOOKINGS_STORAGE_KEY);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as { bookings?: unknown };
+      if (Array.isArray(parsed.bookings)) {
+        return parsed.bookings.filter(
+          (item): item is BookingConfirmation =>
+            Boolean(item) && typeof item === "object" && Boolean((item as BookingConfirmation).manageToken)
+        );
+      }
+    } catch {
+      window.localStorage.removeItem(BOOKINGS_STORAGE_KEY);
+    }
+  }
+  // Compatibilidad con el formato anterior (un solo turno por dispositivo).
+  const legacy = window.localStorage.getItem(LEGACY_BOOKING_STORAGE_KEY);
+  if (!legacy) return [];
+  try {
+    const parsed = JSON.parse(legacy) as { manageToken?: string; booking?: BookingConfirmation };
+    if (!parsed.manageToken || !parsed.booking) return [];
+    return [{ ...parsed.booking, manageToken: parsed.manageToken }];
+  } catch {
+    return [];
+  }
+}
+
+function inactiveNotice(booking: { status?: string }) {
+  if (booking.status === "cancelled") {
+    return "Tu turno fue cancelado y el horario ya quedó liberado.";
+  }
+  if (booking.status === "done") {
+    return "Tu turno ya fue completado. Cuando quieras, podés reservar uno nuevo.";
+  }
+  return "Tu turno ya finalizó. Cuando quieras, podés reservar uno nuevo.";
+}
+
+type VerifyDeps = {
+  setBookings: Dispatch<SetStateAction<BookingConfirmation[]>>;
+  setVerifying: Dispatch<SetStateAction<boolean>>;
+  setBookingNotice: Dispatch<SetStateAction<string>>;
+};
+
+type VerifyResult =
+  | { token: string; kind: "active"; booking: BookingConfirmation }
+  | { token: string; kind: "inactive"; booking: BookingConfirmation }
+  | { token: string; kind: "gone" }
+  | { token: string; kind: "error" };
+
+/**
+ * Consulta al servidor el estado real de cada turno guardado: actualiza los
+ * activos, quita de la lista los cancelados/completados/vencidos y conserva
+ * los que no se pudieron consultar por problemas de conexión.
+ */
+async function verifyBookings(
+  tokens: string[],
+  deps: VerifyDeps,
+  isAlive: () => boolean = () => true
+) {
+  if (tokens.length === 0) return;
+  deps.setVerifying(true);
+  try {
+    const results: VerifyResult[] = await Promise.all(
+      tokens.map(async (token): Promise<VerifyResult> => {
+        let booking: BookingConfirmation;
+        try {
+          booking = await getManagedBooking(token);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "";
+          if (/Turno no encontrado|Link inválido/.test(message)) return { token, kind: "gone" };
+          return { token, kind: "error" };
+        }
+        const merged = { ...booking, manageToken: token };
+        if (!isBookingActive(merged)) return { token, kind: "inactive", booking: merged };
+        return { token, kind: "active", booking: merged };
+      })
+    );
+    if (!isAlive()) return;
+
+    const messages: string[] = [];
+    for (const result of results) {
+      if (result.kind === "inactive") messages.push(inactiveNotice(result.booking));
+      else if (result.kind === "gone") {
+        messages.push("Uno de tus turnos ya no está disponible y se quitó de la lista.");
+      }
+    }
+    const notice =
+      messages.length === 1
+        ? messages[0]
+        : messages.length > 1
+          ? "Algunos de tus turnos ya no están activos y se quitaron de la lista."
+          : "";
+
+    const byToken = new Map(results.map((result) => [result.token, result]));
+    deps.setBookings((prev) =>
+      prev.flatMap((entry) => {
+        const token = entry.manageToken || "";
+        const result = byToken.get(token);
+        if (!result || result.kind === "error") return [entry];
+        if (result.kind === "gone") return [];
+        if (result.kind === "inactive") return [];
+        return [{ ...result.booking, manageToken: token, address: entry.address }];
+      })
+    );
+    if (notice) deps.setBookingNotice(notice);
+  } finally {
+    if (isAlive()) deps.setVerifying(false);
+  }
 }
 
 export default function BookingPage() {
@@ -67,40 +243,74 @@ export default function BookingPage() {
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [confirm, setConfirm] = useState<BookingConfirmation | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
-  const [cancelled, setCancelled] = useState(false);
+  const [bookings, setBookings] = useState<BookingConfirmation[]>([]);
+  const [cancellingToken, setCancellingToken] = useState<string | null>(null);
+  const [hydrated, setHydrated] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [bookingNotice, setBookingNotice] = useState("");
+  const [cancelError, setCancelError] = useState("");
+  const didHydrate = useRef(false);
 
   const freeCount = slots.filter((s) => s.free).length;
+  const bookingTokensKey = bookings.map((b) => b.manageToken || "").join(",");
 
   useEffect(() => {
     document.title = `${barberName} · Reservá tu turno online`;
   }, [barberName]);
 
   useEffect(() => {
-    let active = true;
-    async function restoreBooking() {
-      const raw = window.localStorage.getItem(BOOKING_STORAGE_KEY);
-      if (!raw) return;
-      try {
-        const stored = JSON.parse(raw) as { manageToken?: string };
-        if (!stored.manageToken) throw new Error("Token inválido");
-        const booking = await getManagedBooking(stored.manageToken);
-        if (!active) return;
-        setConfirm({ ...booking, manageToken: stored.manageToken });
-        setCancelled(booking.status === "cancelled");
-      } catch {
-        window.localStorage.removeItem(BOOKING_STORAGE_KEY);
+    // Se hidrata en un microtask: evita renders en cascada desde el efecto y
+    // el doble ciclo de efectos de React StrictMode en desarrollo.
+    queueMicrotask(() => {
+      if (didHydrate.current) return;
+      didHydrate.current = true;
+      const stored = loadStoredBookings();
+      const activeList = stored.filter(isBookingActive);
+      const inactive = stored.find((entry) => !isBookingActive(entry));
+      setBookings(activeList);
+      setHydrated(true);
+      setTermsAccepted(loadTermsAccepted());
+      if (inactive) setBookingNotice(inactiveNotice(inactive));
+      if (activeList.length > 0) {
+        // Verificamos en segundo plano sin bloquear la página.
+        void verifyBookings(
+          activeList.map((entry) => entry.manageToken || "").filter(Boolean),
+          { setBookings, setVerifying, setBookingNotice }
+        );
       }
-    }
-    void restoreBooking();
-    return () => {
-      active = false;
-    };
+    });
   }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const tokens = bookingTokensKey.split(",").filter(Boolean);
+    if (tokens.length === 0) return;
+    let alive = true;
+
+    const syncBookings = () => {
+      if (!alive) return;
+      void verifyBookings(tokens, { setBookings, setVerifying, setBookingNotice }, () => alive);
+    };
+
+    const intervalId = window.setInterval(syncBookings, 60_000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") syncBookings();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      alive = false;
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [hydrated, bookingTokensKey]);
+
+  // Mantener la lista de turnos guardada en el dispositivo.
+  useEffect(() => {
+    if (!hydrated) return;
+    persistBookings(bookings);
+  }, [hydrated, bookings]);
 
   useEffect(() => {
     let cancelled = false;
@@ -146,44 +356,8 @@ export default function BookingPage() {
       setError("Elegí una fecha y un horario antes de continuar");
       return;
     }
-    if (editing) {
-      if (!confirm?.manageToken) {
-        setError("No encontramos el acceso privado de este turno");
-        return;
-      }
-      setSubmitting(true);
-      setError("");
-      try {
-        const updated = await updateBookingSchedule(confirm.manageToken, {
-          service: selectedService,
-          date,
-          time: selectedSlot,
-        });
-        setConfirm({
-          ...updated,
-          manageToken: confirm.manageToken,
-          address: confirm.address,
-        });
-        setEditing(false);
-        setCancelled(false);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "No pudimos actualizar el turno";
-        setError(message);
-        if (/disponible|ocupado/.test(message)) {
-          setSelectedSlot("");
-          setStep(3);
-        }
-      } finally {
-        setSubmitting(false);
-      }
-      return;
-    }
     if (!name.trim() || phone.trim().length < 6) {
       setError("Ingresá tu nombre y un teléfono válido");
-      return;
-    }
-    if (!acceptedTerms) {
-      setError("Aceptá los términos de reserva para continuar");
       return;
     }
     setSubmitting(true);
@@ -196,13 +370,22 @@ export default function BookingPage() {
         date,
         time: selectedSlot,
       });
-      setConfirm(booking);
-      if (booking.manageToken) {
-        window.localStorage.setItem(
-          BOOKING_STORAGE_KEY,
-          JSON.stringify({ manageToken: booking.manageToken })
-        );
-      }
+      setBookings((prev) =>
+        booking.manageToken
+          ? [booking, ...prev.filter((entry) => entry.manageToken !== booking.manageToken)]
+          : prev
+      );
+      setBookingNotice(
+        `Turno reservado: ${booking.service} · ${formatDate(booking.date)} · ${booking.time} h. Queda guardado en este dispositivo.`
+      );
+      setCancelError("");
+      setStep(1);
+      setDate("");
+      setSelectedSlot("");
+      setSelectedService("");
+      window.requestAnimationFrame(() =>
+        document.getElementById("mis-turnos")?.scrollIntoView({ behavior: "smooth", block: "start" })
+      );
       await refreshSlots();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Error inesperado";
@@ -216,107 +399,34 @@ export default function BookingPage() {
     }
   }
 
-  function resetForm() {
-    window.localStorage.removeItem(BOOKING_STORAGE_KEY);
-    setConfirm(null);
-    setDate("");
-    setSelectedSlot("");
-    setStep(1);
-    setName("");
-    setPhone("");
-    setAcceptedTerms(false);
-    setError("");
-    setCancelled(false);
-    setCancelling(false);
-    setEditing(false);
+  function acceptTerms() {
+    persistTermsAccepted();
+    setTermsAccepted(true);
   }
 
-  function startEditingBooking() {
-    if (!confirm?.manageToken || cancelled) return;
-    setEditing(true);
-    setSelectedService(confirm.service);
-    setDate("");
-    setSelectedSlot("");
-    setStep(2);
-    setError("");
-  }
-
-  async function handleCancelBooking() {
-    if (!confirm?.manageToken || cancelling) return;
+  async function handleCancelBooking(token: string) {
+    if (cancellingToken) return;
     if (!window.confirm("¿Querés cancelar este turno? Esta acción libera el horario.")) return;
-    setCancelling(true);
-    setError("");
+    setCancellingToken(token);
+    setCancelError("");
     try {
-      await cancelBooking(confirm.manageToken);
-      setCancelled(true);
-      setConfirm({ ...confirm, status: "cancelled" });
+      await cancelBooking(token);
+      setBookings((prev) => prev.filter((entry) => entry.manageToken !== token));
+      setBookingNotice("El turno fue cancelado y el horario ya quedó liberado.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No pudimos cancelar el turno");
+      setCancelError(err instanceof Error ? err.message : "No pudimos cancelar el turno");
     } finally {
-      setCancelling(false);
+      setCancellingToken(null);
     }
   }
 
-  if (confirm && !editing) {
+  if (!hydrated) {
     return (
-      <div className="booking-bg">
-        <div className="max-w-[720px] mx-auto px-4 py-10">
-          <div className="flex flex-col items-center text-center gap-4 bg-[var(--card)] border border-[var(--border)] rounded-2xl p-8 mt-[10vh]">
-            <div className={`w-14 h-14 rounded-full text-[28px] grid place-items-center ${cancelled ? "bg-red-500/15 text-red-400" : "bg-emerald-500/15 text-emerald-400"}`}>
-              {cancelled ? "×" : "✓"}
-            </div>
-            <h1 className="text-3xl font-bold">{cancelled ? "Turno cancelado" : "¡Solicitud recibida!"}</h1>
-            <p className="text-[var(--muted)]">{barberName}</p>
-            {!cancelled && (
-              <p className="text-sm text-[var(--muted)] bg-[var(--bg-soft)] border border-[var(--border)] rounded-xl px-4 py-3">
-                Tu solicitud quedó registrada. El local puede confirmarte el turno si necesita validar disponibilidad.
-              </p>
-            )}
-            <ul className="w-full flex flex-col list-none m-0 p-0">
-              <ConfirmRow label="Servicio" value={confirm.service} />
-              <ConfirmRow label="Fecha" value={formatDate(confirm.date)} />
-              <ConfirmRow label="Hora" value={confirm.time} />
-              <ConfirmRow label="Nombre" value={confirm.name} />
-              <ConfirmRow label="Teléfono" value={confirm.phone} />
-              <ConfirmRow label="Dirección" value={confirm.address || "Te esperamos en el local"} />
-            </ul>
-            {!cancelled && (
-              <div className="w-full flex flex-col gap-2.5">
-                <p className="text-sm text-[var(--muted)]">
-                  Guardá esta pantalla. Podés editar el horario o cancelar el turno desde acá.
-                </p>
-                {confirm.manageToken && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={startEditingBooking}
-                      className="w-full px-5 py-3 rounded-xl font-bold text-center bg-[var(--card-2)] text-[var(--text)] border border-[var(--border)] hover:border-[var(--accent)]"
-                    >
-                      Editar horario
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleCancelBooking}
-                      disabled={cancelling}
-                      className="w-full px-5 py-3 rounded-xl font-bold text-center text-red-300 border border-red-500/30 disabled:opacity-60"
-                    >
-                      {cancelling ? "Cancelando…" : "Cancelar turno"}
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-            {error && <p role="alert" className="w-full text-sm text-[var(--red)] font-semibold">{error}</p>}
-            <button
-              type="button"
-              onClick={resetForm}
-              className="mt-4 px-6 py-3 rounded-xl font-bold bg-gradient-to-b from-[var(--accent)] to-[var(--accent-strong)] text-[#1a1406]"
-            >
-              Reservar otro turno
-            </button>
-          </div>
-        </div>
-      </div>
+      <main className="booking-bg grid min-h-[100svh] place-items-center px-4">
+        <p className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-5 py-4 text-sm font-semibold text-[var(--muted)]">
+          Buscando tus turnos…
+        </p>
+      </main>
     );
   }
 
@@ -324,6 +434,12 @@ export default function BookingPage() {
     <div className="booking-bg">
       <Navbar nombre={barberName} />
       <div className="flex flex-col gap-4 sm:gap-5 max-w-[720px] w-full mx-auto pt-20 sm:pt-24 px-3.5 sm:px-5 pb-12 sm:pb-16">
+
+        {bookingNotice && (
+          <p role="status" className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-300">
+            {bookingNotice}
+          </p>
+        )}
 
         {/* Hero */}
         <section className="relative h-[215px] sm:h-[270px] rounded-[18px] sm:rounded-[20px] overflow-hidden border border-[var(--border)]">
@@ -360,6 +476,49 @@ export default function BookingPage() {
           )}
         </div>
 
+        {/* Mis turnos */}
+        {bookings.length > 0 && (
+          <section
+            id="mis-turnos"
+            aria-labelledby="mis-turnos-titulo"
+            className="scroll-mt-24 bg-[var(--card)] border border-[var(--accent)] rounded-[22px] sm:rounded-2xl p-3.5 sm:p-[22px] flex flex-col gap-3 sm:gap-3.5 shadow-[0_18px_60px_rgba(0,0,0,0.18)]"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2
+                id="mis-turnos-titulo"
+                className="text-[19px] sm:text-[26px] font-bold tracking-[-0.3px] flex items-center gap-2"
+              >
+                Tus turnos
+                <span className="inline-grid place-items-center min-w-6 h-6 sm:min-w-7 sm:h-7 px-1.5 rounded-full bg-accent/15 text-accent text-[12px] sm:text-[13px] font-extrabold">
+                  {bookings.length}
+                </span>
+              </h2>
+              {verifying && (
+                <span className="text-xs font-semibold text-[var(--muted)]">Actualizando…</span>
+              )}
+            </div>
+            <p className="text-[var(--muted)] text-[13px] sm:text-sm -mt-1">
+              Se guardan en este dispositivo. Volvé cuando quieras para cancelarlos.
+            </p>
+            {cancelError && (
+              <p role="alert" className="text-sm font-semibold text-[var(--red)]">{cancelError}</p>
+            )}
+            <ul className="list-none m-0 p-0 flex flex-col gap-2.5">
+              {bookings.map((booking) => (
+                <TurnoCard
+                  key={booking.manageToken || booking._id}
+                  booking={booking}
+                  cancelling={cancellingToken === booking.manageToken}
+                  disabled={Boolean(cancellingToken)}
+                  onCancel={() => {
+                    if (booking.manageToken) handleCancelBooking(booking.manageToken);
+                  }}
+                />
+              ))}
+            </ul>
+          </section>
+        )}
+
         <BookingProgress step={step} />
 
         {/* Step 1: Service */}
@@ -388,20 +547,32 @@ export default function BookingPage() {
                   setStep(2);
                   setLoading(true);
                 }}
-                className={`group w-full min-h-[92px] text-left bg-[var(--card-2)] border rounded-[17px] p-3.5 flex items-center gap-3 text-[var(--text)] transition-all active:scale-[0.99] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
+                className={`group w-full min-h-[84px] sm:min-h-[92px] text-left bg-[var(--card-2)] border rounded-[17px] p-3 sm:p-3.5 flex items-center gap-3.5 text-[var(--text)] transition-all active:scale-[0.99] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
                   selectedService === s.name
-                    ? "border-[var(--accent)] bg-accent/15 shadow-[0_8px_24px_rgba(212,168,83,0.12)]"
+                    ? "border-[var(--accent)] bg-accent/10 shadow-[0_8px_24px_rgba(212,168,83,0.12)]"
                     : "border-[var(--border)] hover:border-[var(--accent)] hover:bg-[var(--card)]"
                 }`}
               >
-                <ServiceIcon service={s.name} />
+                <ServiceThumb service={s.name} img={s.img} />
                 <span className="min-w-0 flex-1">
-                  <strong className="block truncate text-[15px] sm:text-base">{s.name}</strong>
-                  <span className="block mt-1 text-[12.5px] text-[var(--muted)]">
-                    {s.duration} min · {currency(s.price)}
+                  <strong className="block truncate text-[15px] sm:text-[16px] font-semibold">
+                    {s.name}
+                  </strong>
+                  <span className="mt-1.5 flex items-center gap-2">
+                    <span className="inline-flex items-center rounded-full border border-[var(--border)] bg-[var(--bg-soft)] px-2 py-[3px] text-[11.5px] leading-none text-[var(--muted)] whitespace-nowrap">
+                      {s.duration} min
+                    </span>
+                    <span className="text-[13.5px] font-bold tabular-nums text-accent">
+                      {currency(s.price)}
+                    </span>
                   </span>
                 </span>
-                <span aria-hidden="true" className="text-xl text-[var(--muted)] transition-transform group-hover:translate-x-0.5 group-hover:text-accent">›</span>
+                <span
+                  aria-hidden="true"
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--bg-soft)] text-[15px] leading-none text-[var(--muted)] transition group-hover:bg-accent/15 group-hover:text-accent"
+                >
+                  ›
+                </span>
               </button>
             ))}
           </div>
@@ -420,7 +591,7 @@ export default function BookingPage() {
         {/* Step 2: Day */}
         {step === 2 && <section className="bg-[var(--card)] border border-[var(--accent)] rounded-[22px] sm:rounded-2xl p-4 sm:p-[22px] flex flex-col gap-3.5 sm:gap-4 shadow-[0_18px_60px_rgba(0,0,0,0.18)]">
           <h2 className="text-[17px] font-bold">
-            <Step n={2} /> {editing ? "¿Qué nuevo día te queda cómodo?" : "¿Qué día te queda cómodo?"}
+            <Step n={2} /> ¿Qué día te queda cómodo?
           </h2>
           <p className="text-[var(--muted)] text-sm">
             {selectedService} · Primero elegí la fecha y después te mostramos los horarios.
@@ -442,15 +613,8 @@ export default function BookingPage() {
             />
           </div>
           <WizardBackButton
-            label={editing ? "Volver al turno" : "Cambiar servicio"}
+            label="Cambiar servicio"
             onClick={() => {
-              if (editing) {
-                setEditing(false);
-                setDate("");
-                setSelectedSlot("");
-                setStep(1);
-                return;
-              }
               setDate("");
               setSelectedSlot("");
               setStep(1);
@@ -581,45 +745,30 @@ export default function BookingPage() {
         {step === 4 && selectedSlot && (
           <section className="bg-[var(--card)] border border-[var(--accent)] rounded-[22px] sm:rounded-2xl p-4 sm:p-[22px] flex flex-col gap-3.5 sm:gap-4 shadow-[0_18px_60px_rgba(0,0,0,0.18)]">
             <h2 className="text-[17px] font-bold">
-              <Step n={4} /> {editing ? "Confirmá el nuevo horario" : "Confirmá tus datos"}
+              <Step n={4} /> Confirmá tus datos
             </h2>
             <SelectionSummary service={selectedService} date={`${formatDate(date)} · ${selectedSlot} h`} />
             {error && <p role="alert" className="text-[var(--red)] font-semibold">{error}</p>}
             <form className="flex flex-col gap-3.5" onSubmit={handleSubmit}>
-              {!editing && (
-                <>
-                  <Field label="Nombre">
-                    <input
-                      className="w-full px-3.5 py-3 rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] text-[var(--text)]"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      placeholder="Tu nombre"
-                      autoComplete="name"
-                    />
-                  </Field>
-                  <Field label="Teléfono / WhatsApp">
-                    <input
-                      className="w-full px-3.5 py-3 rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] text-[var(--text)]"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      placeholder="Ej: 1155667788"
-                      inputMode="tel"
-                      autoComplete="tel"
-                    />
-                  </Field>
-                  <label className="flex items-start gap-2.5 text-sm text-[var(--muted)] leading-5">
-                    <input
-                      type="checkbox"
-                      checked={acceptedTerms}
-                      onChange={(event) => setAcceptedTerms(event.target.checked)}
-                      className="mt-1 accent-[var(--accent)]"
-                    />
-                    <span>
-                      Acepto los <a href="/terminos" target="_blank" rel="noreferrer" className="text-accent underline">términos de reserva</a> y la <a href="/privacidad" target="_blank" rel="noreferrer" className="text-accent underline">política de privacidad</a>.
-                    </span>
-                  </label>
-                </>
-              )}
+              <Field label="Nombre">
+                <input
+                  className="w-full px-3.5 py-3 rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] text-[var(--text)]"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Tu nombre"
+                  autoComplete="name"
+                />
+              </Field>
+              <Field label="Teléfono / WhatsApp">
+                <input
+                  className="w-full px-3.5 py-3 rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] text-[var(--text)]"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="Ej: 1155667788"
+                  inputMode="tel"
+                  autoComplete="tel"
+                />
+              </Field>
               <div className="grid grid-cols-1 sm:flex sm:justify-between gap-2.5">
                 <button
                   type="button"
@@ -635,10 +784,34 @@ export default function BookingPage() {
                   disabled={submitting}
                   className="w-full sm:w-auto px-5 py-3 rounded-xl font-bold bg-gradient-to-b from-[var(--accent)] to-[var(--accent-strong)] text-[#1a1406] disabled:opacity-60"
                 >
-                  {submitting ? (editing ? "Guardando…" : "Reservando…") : editing ? "Guardar nuevo horario" : "Confirmar turno"}
+                  {submitting ? "Reservando…" : "Confirmar turno"}
                 </button>
               </div>
             </form>
+          </section>
+        )}
+
+        {/* Términos: solo al inicio del flujo y hasta que se aceptan una vez */}
+        {!termsAccepted && step === 1 && (
+          <section
+            aria-labelledby="terminos-titulo"
+            className="rounded-[22px] sm:rounded-2xl border border-[var(--border)] bg-[var(--card)]/70 p-4 sm:p-[22px] flex flex-col gap-3 sm:gap-3.5"
+          >
+            <h2 id="terminos-titulo" className="text-[15px] sm:text-[17px] font-bold">
+              Términos y condiciones
+            </h2>
+            <ul className="list-disc pl-5 flex flex-col gap-1.5 text-[13px] sm:text-sm text-[var(--muted)]">
+              <li>El turno queda a nombre del nombre y teléfono que dejes en el formulario.</li>
+              <li>Llegá 5 minutos antes. Si no podés asistir, cancelá el turno desde esta misma página.</li>
+              <li>Usamos tus datos solo para gestionar la reserva y avisarte si hace falta.</li>
+            </ul>
+            <button
+              type="button"
+              onClick={acceptTerms}
+              className="w-full sm:w-auto sm:self-start px-5 py-2.5 rounded-xl font-bold text-sm border border-accent/40 text-accent hover:bg-accent/10"
+            >
+              Acepto los términos
+            </button>
           </section>
         )}
       </div>
@@ -655,7 +828,7 @@ function BookingProgress({ step }: { step: 1 | 2 | 3 | 4 }) {
   ] as const;
 
   return (
-    <nav aria-label="Progreso de la reserva" className="w-full rounded-2xl border border-[var(--border)] bg-[var(--card)]/70 px-2.5 py-3 sm:px-5">
+    <nav aria-label="Progreso de la reserva" className="w-full rounded-2xl border border-[var(--border)] bg-[var(--card)]/70 px-2.5 py-3 sm:px-5 scroll-mt-24">
       <div className="relative grid grid-cols-4 gap-1">
         <span aria-hidden="true" className="absolute left-[12%] right-[12%] top-3 h-px bg-[var(--border)]" />
         {items.map((item) => (
@@ -723,11 +896,53 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function ConfirmRow({ label, value }: { label: string; value: string }) {
+const MONTH_SHORT = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+const DAY_SHORT = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+
+function TurnoCard({
+  booking,
+  cancelling,
+  disabled,
+  onCancel,
+}: {
+  booking: BookingConfirmation;
+  cancelling: boolean;
+  disabled: boolean;
+  onCancel: () => void;
+}) {
+  const d = new Date(`${booking.date}T00:00:00`);
+  const month = MONTH_SHORT[d.getMonth()];
+  const day = d.getDate();
+  const dayShort = DAY_SHORT[d.getDay()];
   return (
-    <li className="flex justify-between gap-3 py-2.5 border-b border-[var(--border)] text-[15px]">
-      <span className="text-[var(--muted)]">{label}</span>
-      <strong className="text-right">{value}</strong>
+    <li className="rounded-xl border border-[var(--border)] bg-[var(--card-2)] p-2.5 sm:p-3.5 flex flex-row items-center gap-2.5 sm:gap-4">
+      <div className="shrink-0 flex items-center">
+        <span className="w-11 sm:w-[58px] rounded-lg border border-[var(--border)] bg-[var(--card)] overflow-hidden text-center">
+          <span className="block text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wide text-accent bg-accent/10 py-0.5">
+            {month}
+          </span>
+          <span className="block py-0.5 sm:py-1 text-base sm:text-xl font-bold leading-none">{day}</span>
+        </span>
+      </div>
+      <div className="min-w-0 flex-1 flex flex-col gap-0.5">
+        <strong className="truncate text-[13.5px] sm:text-base">{booking.service}</strong>
+        <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[12.5px] sm:text-sm text-[var(--muted)]">
+          <span className="truncate">
+            {dayShort} · {booking.time} h
+          </span>
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] sm:text-xs font-bold text-emerald-400">
+            <i className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-400" /> Activo
+          </span>
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={onCancel}
+        disabled={disabled || cancelling}
+        className="w-auto shrink-0 whitespace-nowrap px-3 sm:px-4 py-2 rounded-xl font-bold text-[12.5px] sm:text-sm text-red-300 border border-red-500/30 hover:bg-red-500/10 disabled:opacity-60"
+      >
+        {cancelling ? "Cancelando…" : "Cancelar"}
+      </button>
     </li>
   );
 }
