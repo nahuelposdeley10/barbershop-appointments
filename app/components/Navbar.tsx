@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { BarberPole } from "./booking/BarberIcons";
 
@@ -50,9 +50,34 @@ export default function Navbar({
   onLogout?: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const navRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && navRef.current && !navRef.current.contains(target)) {
+        setOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+
+    document.addEventListener("pointerdown", closeOnOutsidePress);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePress);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 bg-zinc-950/80 backdrop-blur-md border-b border-zinc-800/50">
+    <nav
+      ref={navRef}
+      className="fixed top-0 left-0 right-0 z-50 bg-zinc-950/80 backdrop-blur-md border-b border-zinc-800/50"
+    >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           <Link href="/#hero" className="flex items-center gap-2.5 group min-w-0">
@@ -116,7 +141,7 @@ export default function Navbar({
 
           <button
             className="md:hidden text-zinc-400 hover:text-white p-2 -mr-2"
-            aria-label="Menú"
+            aria-label={open ? "Cerrar menú" : "Menú"}
             aria-expanded={open}
             onClick={() => setOpen(!open)}
           >
@@ -161,6 +186,7 @@ export default function Navbar({
             <Link
               href={CONFIG.reservarUrl}
               className="block bg-accent text-zinc-950 px-5 py-3.5 rounded-full text-base font-semibold text-center hover:bg-accent-hover transition-colors mt-3"
+              onClick={() => setOpen(false)}
             >
               Reservar Turno
             </Link>
