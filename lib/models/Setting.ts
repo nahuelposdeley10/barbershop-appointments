@@ -48,7 +48,7 @@ const settingSchema = new mongoose.Schema({
     default:
       "Combinamos técnica, estilo y calidez para que cada visita sea única. Nuestros profesionales están al día con las últimas tendencias en cortes y cuidado personal.",
   },
-  whatsapp: { type: String, default: "5491100000000" },
+  whatsapp: { type: String, default: "5491162470117" },
   instagram: { type: String, default: "#" },
   facebook: { type: String, default: "#" },
   email: { type: String, default: "contacto@barberia.com" },

@@ -115,7 +115,7 @@ function fallbackSiteData(): SiteData {
     aboutTitle2: "una experiencia",
     aboutText:
       "Combinamos técnica, estilo y calidez para que cada visita sea única.",
-    whatsapp: "5491100000000",
+    whatsapp: "5491162470117",
     instagram: "#",
     facebook: "#",
     email: "contacto@barberia.com",
@@ -185,7 +185,7 @@ async function getSiteDataFromDatabase(): Promise<SiteData> {
     aboutText:
       s.aboutText ||
       "Combinamos técnica, estilo y calidez para que cada visita sea única.",
-    whatsapp: s.whatsapp || "5491100000000",
+    whatsapp: s.whatsapp || "5491162470117",
     instagram: s.instagram || "#",
     facebook: s.facebook || "#",
     email: s.email || "contacto@barberia.com",

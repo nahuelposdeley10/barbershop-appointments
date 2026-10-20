@@ -21,7 +21,7 @@ export function defaultSettings() {
     aboutTitle2: "una experiencia",
     aboutText:
       "Combinamos técnica, estilo y calidez para que cada visita sea única. Nuestros profesionales están al día con las últimas tendencias en cortes y cuidado personal.",
-    whatsapp: "5491100000000",
+    whatsapp: "5491162470117",
     instagram: "#",
     facebook: "#",
     email: "contacto@barberia.com",
@@ -47,6 +47,21 @@ export function defaultSettings() {
   };
 }
 
+/**
+ * Deja el WhatsApp en formato internacional sin signos (ej. 5491162470117).
+ * Si llega un número local argentino de 10 dígitos, agrega 54 9.
+ */
+export function normalizeWhatsapp(value: string): string {
+  let digits = String(value || "").replace(/\D/g, "");
+  if (digits.startsWith("00")) digits = digits.slice(2);
+  digits = digits.replace(/^0+/, "");
+  if (digits.length === 10) digits = `549${digits}`;
+  else if (digits.length === 12 && digits.startsWith("54")) {
+    digits = `549${digits.slice(2)}`;
+  }
+  return digits;
+}
+
 export async function getSettings() {
   let doc = await Setting.findOne().select("+pin +pinHash");
   if (!doc) {
@@ -58,6 +73,10 @@ export async function getSettings() {
       if (record[key] === undefined) {
         record[key] = def[key as keyof typeof def];
       }
+    }
+    const normalizedWhatsapp = normalizeWhatsapp(doc.whatsapp || "");
+    if (normalizedWhatsapp && normalizedWhatsapp !== doc.whatsapp) {
+      doc.whatsapp = normalizedWhatsapp;
     }
     await doc.save();
   }

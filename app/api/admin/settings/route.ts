@@ -1,6 +1,10 @@
 import { NextRequest } from "next/server";
 import { connectDB } from "@/lib/db";
-import { normalizeDate, defaultSettings } from "@/lib/booking-logic";
+import {
+  normalizeDate,
+  normalizeWhatsapp,
+  defaultSettings,
+} from "@/lib/booking-logic";
 import { getAdminAccount, requireAdmin, setAdminCredentials } from "@/lib/auth";
 import { Setting } from "@/lib/models/Setting";
 
@@ -127,7 +131,16 @@ export async function PUT(req: NextRequest) {
     setStr("aboutTitle", 60);
     setStr("aboutTitle2", 60);
     setStr("aboutText", 600);
-    setStr("whatsapp", 30);
+    if (typeof body.whatsapp === "string" && body.whatsapp.trim()) {
+      const whatsapp = normalizeWhatsapp(body.whatsapp);
+      if (whatsapp.length < 8 || whatsapp.length > 15) {
+        return Response.json(
+          { error: "Ingresá un WhatsApp válido con código de país." },
+          { status: 400 }
+        );
+      }
+      current.whatsapp = whatsapp;
+    }
     setStr("instagram", 120);
     setStr("facebook", 120);
     setStr("email", 120);
