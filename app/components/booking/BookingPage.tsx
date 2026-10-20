@@ -258,7 +258,9 @@ export default function BookingPage() {
   const bookingTokensKey = bookings.map((b) => b.manageToken || "").join(",");
 
   useEffect(() => {
-    document.title = `${barberName} · Reservá tu turno online`;
+    document.title = barberName
+      ? `${barberName} · Reservá tu turno online`
+      : "Reservá tu turno online";
   }, [barberName]);
 
   useEffect(() => {

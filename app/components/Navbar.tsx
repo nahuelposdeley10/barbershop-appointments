@@ -60,17 +60,23 @@ export default function Navbar({
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={logo}
-                alt={nombre}
-                className="h-10 sm:h-11 w-auto max-w-[170px] sm:max-w-[230px] object-contain"
+                alt={nombre || "Logo"}
+                className={`h-9 sm:h-11 w-auto object-contain shrink-0 ${
+                  nombre
+                    ? "max-w-[104px] sm:max-w-[170px]"
+                    : "max-w-[190px] sm:max-w-[240px]"
+                }`}
               />
             ) : (
               <>
-                <span className="text-accent">{Icons.scissors}</span>
-                <BarberPole className="w-10 h-[5px] opacity-70" />
-                <span className="font-display text-xl font-bold tracking-tight group-hover:text-accent transition-colors">
-                  {nombre}
-                </span>
+                <span className="text-accent shrink-0">{Icons.scissors}</span>
+                <BarberPole className="w-10 h-[5px] opacity-70 shrink-0" />
               </>
+            )}
+            {nombre && (
+              <span className="font-display text-xl font-bold tracking-tight group-hover:text-accent transition-colors truncate min-w-0">
+                {nombre}
+              </span>
             )}
           </Link>
 

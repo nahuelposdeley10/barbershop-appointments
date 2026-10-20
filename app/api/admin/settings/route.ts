@@ -114,7 +114,7 @@ export async function PUT(req: NextRequest) {
       if (val !== null) current[field] = val;
     };
 
-    if (typeof body.barberName === "string" && body.barberName.trim()) {
+    if (typeof body.barberName === "string") {
       current.barberName = body.barberName.trim().slice(0, 60);
     }
     if (typeof body.message === "string") {

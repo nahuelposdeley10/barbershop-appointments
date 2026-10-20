@@ -173,7 +173,7 @@ async function getSiteDataFromDatabase(): Promise<SiteData> {
     );
 
   return {
-    nombre: s.barberName || "Barbería",
+    nombre: typeof s.barberName === "string" ? s.barberName : "Barbería",
     slogan: s.slogan || "Tu estilo, nuestra pasión",
     heroTitle1: s.heroTitle1 || "Tu Estilo,",
     heroTitle2: s.heroTitle2 || "Nuestra Pasión",
@@ -352,7 +352,7 @@ function Hero({ data }: { data: SiteData }) {
         </h1>
 
         <p className="text-zinc-300 text-base sm:text-xl max-w-2xl mx-auto mb-8 leading-relaxed">
-          {data.heroDescription} En {data.nombre} nos importa cada detalle.
+          {data.heroDescription} En {data.nombre || "la barbería"} nos importa cada detalle.
         </p>
 
         <div className="flex justify-center mb-8 sm:mb-10">
@@ -641,7 +641,7 @@ function Resenas({ nombre }: { nombre: string }) {
         <SectionHeader
           eyebrow="Opiniones reales"
           title="Lo que dicen nuestros clientes"
-          description={`La confianza de miles de clientes que eligen ${nombre}.`}
+          description={`La confianza de miles de clientes que eligen ${nombre || "la barbería"}.`}
         />
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -739,14 +739,14 @@ function Ubicacion({ data }: { data: SiteData }) {
               allowFullScreen
               loading="lazy"
               referrerPolicy="no-referrer-when-downgrade"
-              title={`Ubicación de ${data.nombre}`}
+              title={`Ubicación de ${data.nombre || "la barbería"}`}
               className="pointer-events-none"
             />
             <a
               href={mapLink}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label={`Abrir la ubicación de ${data.nombre} en Google Maps`}
+              aria-label={`Abrir la ubicación de ${data.nombre || "la barbería"} en Google Maps`}
               className="absolute inset-0 z-10 flex items-end bg-zinc-950/0 p-4 transition-colors hover:bg-zinc-950/10 focus-visible:bg-zinc-950/20 focus-visible:outline-none"
             >
               <span className="rounded-full bg-zinc-950/85 px-4 py-2 text-sm font-semibold text-white shadow-lg backdrop-blur-sm transition-transform group-hover:-translate-y-1 group-focus-within:-translate-y-1">
@@ -833,7 +833,9 @@ function Footer({ data }: { data: SiteData }) {
           <div className="text-center md:text-left">
             <div className="flex items-center gap-2 justify-center md:justify-start mb-2">
               <span className="text-accent">{Icons.scissors}</span>
-              <span className="font-display text-xl font-bold">{data.nombre}</span>
+              {data.nombre && (
+                <span className="font-display text-xl font-bold">{data.nombre}</span>
+              )}
             </div>
             <p className="text-zinc-500 text-sm max-w-xs">
               {data.slogan}. Cortes premium y un servicio que te hace volver.
@@ -871,7 +873,7 @@ function Footer({ data }: { data: SiteData }) {
           </div>
 
           <p className="text-zinc-600 text-sm text-center">
-            © {new Date().getFullYear()} {data.nombre}. Todos los derechos reservados.
+            © {new Date().getFullYear()}{data.nombre ? ` ${data.nombre}` : ""}. Todos los derechos reservados.
           </p>
         </div>
       </div>
@@ -885,7 +887,7 @@ function Footer({ data }: { data: SiteData }) {
 export async function generateMetadata() {
   const data = await getSiteData();
   return {
-    title: data.nombre,
+    title: data.nombre || "Barbería",
     description: `${data.slogan}. Cortes premium y un servicio que te hace volver.`,
   };
 }
@@ -895,7 +897,7 @@ export default async function Home() {
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "HairSalon",
-    name: data.nombre,
+    name: data.nombre || "Barbería",
     description: data.heroDescription,
     url: process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
     telephone: data.whatsapp ? `+${data.whatsapp}` : undefined,

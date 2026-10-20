@@ -594,6 +594,9 @@ export default function AdminPage({
                 value={draft.barberName}
                 onChange={(e) => setDraft({ ...draft, barberName: e.target.value })}
               />
+              <span className="text-[var(--muted)] text-xs font-normal">
+                Si lo dejás vacío, arriba se muestra solo el logo (o la tijera).
+              </span>
             </Field>
 
             <Field label="Mensaje para los clientes">
