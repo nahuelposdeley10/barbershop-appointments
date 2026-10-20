@@ -34,6 +34,7 @@ type SiteData = {
   imgHero: string;
   imgAbout: string;
   imgReservar: string;
+  imgLogo: string;
   imgGaleria: string[];
   profesionales: SiteProfesional[];
   reservarUrl: string;
@@ -124,6 +125,7 @@ function fallbackSiteData(): SiteData {
     imgHero: IMG.hero,
     imgAbout: IMG.about,
     imgReservar: IMG.reservar,
+    imgLogo: "",
     imgGaleria: IMG.galeria,
     profesionales: IMG.profesionales,
     reservarUrl: "/reservar",
@@ -193,6 +195,7 @@ async function getSiteDataFromDatabase(): Promise<SiteData> {
     imgHero: s.imgHero || IMG.hero,
     imgAbout: s.imgAbout || IMG.about,
     imgReservar: s.imgReservar || IMG.reservar,
+    imgLogo: s.imgLogo || "",
     imgGaleria:
       s.imgGaleria && s.imgGaleria.length > 0 ? s.imgGaleria : IMG.galeria,
     profesionales: profesionalesDb.length > 0 ? profesionalesDb : IMG.profesionales,
@@ -914,7 +917,7 @@ export default async function Home() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
-      <Navbar nombre={data.nombre} />
+      <Navbar nombre={data.nombre} logo={data.imgLogo} />
       <main className="flex-1">
         <Hero data={data} />
         <SectionDivider />

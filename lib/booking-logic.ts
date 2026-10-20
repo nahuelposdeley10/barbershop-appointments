@@ -31,6 +31,7 @@ export function defaultSettings() {
     imgHero: "",
     imgAbout: "",
     imgReservar: "",
+    imgLogo: "",
     imgGaleria: [],
     profesionales: [],
     services: [

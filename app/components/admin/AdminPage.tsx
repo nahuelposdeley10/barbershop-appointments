@@ -257,7 +257,7 @@ export default function AdminPage({
 
   async function handleUploadImage(
     file: File,
-    key: "imgHero" | "imgAbout" | "imgReservar",
+    key: "imgHero" | "imgAbout" | "imgReservar" | "imgLogo",
     folder: string
   ) {
     if (!draft) return;
@@ -416,6 +416,7 @@ export default function AdminPage({
     <div className="booking-bg">
       <Navbar
         nombre={settings ? settings.barberName : "Barbería"}
+        logo={settings?.imgLogo}
         onLogout={onLogout}
       />
       <div className="flex flex-col gap-5 max-w-[720px] lg:max-w-5xl w-full mx-auto pt-24 px-5 pb-16">
@@ -1136,6 +1137,25 @@ export default function AdminPage({
               </p>
             )}
 
+            <h3 className="text-[15px] font-extrabold text-accent mt-1">Logo</h3>
+            <p className="text-[var(--muted)] text-[13px]">
+              Se muestra arriba a la izquierda en la web y en la reserva. Si no subís
+              nada, se usa el logo actual (tijera + nombre). Ideal: PNG con fondo
+              transparente y formato horizontal. Se guarda con «Guardar imágenes».
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <ImageField
+                label="Logo de la barbería"
+                value={draft.imgLogo}
+                uploading={uploading}
+                onChange={(file) => handleUploadImage(file, "imgLogo", "logo")}
+                onClear={() => setDraft({ ...draft, imgLogo: "" })}
+                fit="contain"
+                aspect="aspect-[3/1]"
+                emptyLabel="Logo actual (tijera + nombre)"
+              />
+            </div>
+
             <h3 className="text-[15px] font-extrabold text-accent mt-1">Portada y secciones</h3>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <ImageField
@@ -1532,24 +1552,34 @@ function ImageField({
   uploading,
   onChange,
   onClear,
+  fit = "cover",
+  aspect = "aspect-video",
+  emptyLabel = "Sin imagen",
 }: {
   label: string;
   value: string;
   uploading: boolean;
   onChange: (file: File) => void;
   onClear: () => void;
+  fit?: "cover" | "contain";
+  aspect?: string;
+  emptyLabel?: string;
 }) {
   return (
     <div className="flex flex-col gap-2 rounded-xl bg-[var(--bg-soft)] border border-[var(--border)] p-3">
       <span className="font-semibold text-sm">{label}</span>
       {value ? (
-        <div className="relative rounded-lg overflow-hidden aspect-video border border-[var(--border)]">
+        <div className={`relative rounded-lg overflow-hidden ${aspect} border border-[var(--border)] bg-[var(--card)]`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={value} alt={label} className="w-full h-full object-cover" />
+          <img
+            src={value}
+            alt={label}
+            className={`w-full h-full ${fit === "contain" ? "object-contain p-2" : "object-cover"}`}
+          />
         </div>
       ) : (
-        <div className="grid place-items-center rounded-lg aspect-video border-2 border-dashed border-[var(--border)] text-[var(--muted)] text-xs font-semibold">
-          Sin imagen
+        <div className={`grid place-items-center rounded-lg ${aspect} border-2 border-dashed border-[var(--border)] text-[var(--muted)] text-xs font-semibold text-center px-2`}>
+          {emptyLabel}
         </div>
       )}
       <div className="flex gap-2">

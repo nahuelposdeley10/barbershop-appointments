@@ -61,6 +61,7 @@ export async function GET(req: NextRequest) {
     return Response.json({
       barberName: settings.barberName,
       message: settings.message,
+      imgLogo: settings.imgLogo || "",
       services: settings.services,
       date,
       slots,

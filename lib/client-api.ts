@@ -14,6 +14,7 @@ export type Slot = { time: string; free: boolean; ocupadas: number; sillas: numb
 export type AvailabilityData = {
   barberName: string;
   message: string;
+  imgLogo?: string;
   services: Service[];
   date: string;
   slots: Slot[];
@@ -55,6 +56,7 @@ export type Settings = {
   imgHero: string;
   imgAbout: string;
   imgReservar: string;
+  imgLogo: string;
   imgGaleria: string[];
   profesionales: {
     nombre: string;

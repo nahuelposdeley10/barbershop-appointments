@@ -231,6 +231,7 @@ export default function BookingPage() {
   })();
 
   const [barberName, setBarberName] = useState("Barbería");
+  const [logo, setLogo] = useState("");
   const [message, setMessage] = useState("");
   const [services, setServices] = useState<Service[]>([]);
   const [slots, setSlots] = useState<Slot[]>([]);
@@ -319,6 +320,7 @@ export default function BookingPage() {
       .then((data) => {
         if (cancelled) return;
         setBarberName(data.barberName);
+        setLogo(data.imgLogo || "");
         setMessage(data.message || "");
         setServices(data.services || []);
         setSlots(data.slots || []);
@@ -339,6 +341,7 @@ export default function BookingPage() {
     try {
       const data = await getAvailability(date || today, selectedService);
       setBarberName(data.barberName);
+      setLogo(data.imgLogo || "");
       setMessage(data.message || "");
       setServices(data.services || []);
       setSlots(data.slots || []);
@@ -432,7 +435,7 @@ export default function BookingPage() {
 
   return (
     <div className="booking-bg">
-      <Navbar nombre={barberName} />
+      <Navbar nombre={barberName} logo={logo} />
       <div className="flex flex-col gap-4 sm:gap-5 max-w-[720px] w-full mx-auto pt-20 sm:pt-24 px-3.5 sm:px-5 pb-12 sm:pb-16">
 
         {bookingNotice && (

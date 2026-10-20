@@ -143,7 +143,7 @@ export async function PUT(req: NextRequest) {
       }
       current.mapLink = mapLink.slice(0, 500);
     }
-    const applyScalarImg = (field: "imgHero" | "imgAbout" | "imgReservar") => {
+    const applyScalarImg = (field: "imgHero" | "imgAbout" | "imgReservar" | "imgLogo") => {
       if (typeof current[field] === "undefined" || typeof current[field] !== "string") current[field] = "";
       if (typeof body[field] === "string") {
         current[field] = (body[field] as string).trim().slice(0, 500);
@@ -152,6 +152,7 @@ export async function PUT(req: NextRequest) {
     applyScalarImg("imgHero");
     applyScalarImg("imgAbout");
     applyScalarImg("imgReservar");
+    applyScalarImg("imgLogo");
     if (Array.isArray(body.imgGaleria)) {
       current.imgGaleria = body.imgGaleria
         .filter((x) => typeof x === "string" && x.trim())

@@ -42,9 +42,11 @@ const links = [
 
 export default function Navbar({
   nombre,
+  logo,
   onLogout,
 }: {
   nombre: string;
+  logo?: string;
   onLogout?: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -53,12 +55,23 @@ export default function Navbar({
     <nav className="fixed top-0 left-0 right-0 z-50 bg-zinc-950/80 backdrop-blur-md border-b border-zinc-800/50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-          <Link href="/#hero" className="flex items-center gap-2.5 group">
-            <span className="text-accent">{Icons.scissors}</span>
-            <BarberPole className="w-10 h-[5px] opacity-70" />
-            <span className="font-display text-xl font-bold tracking-tight group-hover:text-accent transition-colors">
-              {nombre}
-            </span>
+          <Link href="/#hero" className="flex items-center gap-2.5 group min-w-0">
+            {logo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={logo}
+                alt={nombre}
+                className="h-10 sm:h-11 w-auto max-w-[170px] sm:max-w-[230px] object-contain"
+              />
+            ) : (
+              <>
+                <span className="text-accent">{Icons.scissors}</span>
+                <BarberPole className="w-10 h-[5px] opacity-70" />
+                <span className="font-display text-xl font-bold tracking-tight group-hover:text-accent transition-colors">
+                  {nombre}
+                </span>
+              </>
+            )}
           </Link>
 
           <div className="hidden md:flex items-center gap-8">

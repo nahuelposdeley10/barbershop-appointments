@@ -58,6 +58,7 @@ const settingSchema = new mongoose.Schema({
   imgHero: { type: String, default: "" },
   imgAbout: { type: String, default: "" },
   imgReservar: { type: String, default: "" },
+  imgLogo: { type: String, default: "" },
   imgGaleria: { type: [String], default: [] },
   profesionales: { type: [profesionalSchema], default: [] },
   services: { type: [serviceSchema], default: [] },
@@ -111,6 +112,7 @@ export type SettingsDoc = {
   imgHero: string;
   imgAbout: string;
   imgReservar: string;
+  imgLogo: string;
   imgGaleria: string[];
   profesionales: ProfesionalSetting[];
   services: ServiceSetting[];
