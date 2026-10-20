@@ -430,11 +430,11 @@ export default function AdminPage({
           <Tab active={tab === "config"} onClick={() => setTab("config")}>
             Configuración
           </Tab>
-          <Tab active={tab === "web"} onClick={() => setTab("web")}>
-            Sitio web
-          </Tab>
           <Tab active={tab === "imagenes"} onClick={() => setTab("imagenes")}>
             Imágenes
+          </Tab>
+          <Tab active={tab === "web"} onClick={() => setTab("web")}>
+            Sitio web
           </Tab>
         </nav>
 
