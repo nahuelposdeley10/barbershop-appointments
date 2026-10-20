@@ -215,7 +215,14 @@ export async function PUT(req: NextRequest) {
       }));
     }
     if (typeof body.slotMinutes === "number") {
-      current.slotMinutes = Math.min(Math.max(Math.round(body.slotMinutes), 10), 120);
+      const slotMinutes = Math.round(body.slotMinutes);
+      if (!Number.isFinite(slotMinutes) || slotMinutes < 1) {
+        return Response.json(
+          { error: "La separación entre turnos debe ser de al menos 1 minuto." },
+          { status: 400 }
+        );
+      }
+      current.slotMinutes = slotMinutes;
     }
     if (typeof body.cantidadBarberos === "number") {
       current.cantidadBarberos = Math.max(1, Math.round(body.cantidadBarberos));

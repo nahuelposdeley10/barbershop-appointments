@@ -70,6 +70,7 @@ export default function AdminPage({
   const [settings, setSettings] = useState<Settings | null>(null);
   const [draft, setDraft] = useState<Settings | null>(null);
   const [barberosInput, setBarberosInput] = useState("1");
+  const [slotMinutesInput, setSlotMinutesInput] = useState("30");
   const [adminEmail, setAdminEmail] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [bookings, setBookings] = useState<AdminBooking[]>([]);
@@ -99,6 +100,7 @@ export default function AdminPage({
         setSettings(s);
         setDraft(JSON.parse(JSON.stringify(s)));
         setBarberosInput(String(s.cantidadBarberos ?? 1));
+        setSlotMinutesInput(String(s.slotMinutes ?? 30));
         setAdminEmail(s.adminEmail || "");
         setAdminPassword("");
       })
@@ -379,6 +381,7 @@ export default function AdminPage({
       setSettings(updated);
       setDraft(JSON.parse(JSON.stringify(updated)));
       setBarberosInput(String(updated.cantidadBarberos ?? 1));
+      setSlotMinutesInput(String(updated.slotMinutes ?? 30));
       setAdminEmail(updated.adminEmail || "");
       setAdminPassword("");
       setSaved(true);
@@ -749,13 +752,25 @@ export default function AdminPage({
             <Field label="Separación entre turnos (minutos)">
               <input
                 type="number"
-                min={10}
-                step={10}
+                step={1}
                 className="input"
-                value={draft.slotMinutes}
-                onChange={(e) =>
-                  setDraft({ ...draft, slotMinutes: Number(e.target.value) })
-                }
+                value={slotMinutesInput}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  setSlotMinutesInput(raw);
+                  setDraft({
+                    ...draft,
+                    slotMinutes: raw === "" ? 0 : Number(raw),
+                  });
+                }}
+                onBlur={() => {
+                  const value = Math.round(Number(slotMinutesInput));
+                  const fallback = settings?.slotMinutes ?? 30;
+                  const next =
+                    Number.isFinite(value) && value >= 1 ? value : fallback;
+                  setSlotMinutesInput(String(next));
+                  setDraft({ ...draft, slotMinutes: next });
+                }}
               />
             </Field>
 
