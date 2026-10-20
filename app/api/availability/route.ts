@@ -45,8 +45,12 @@ export async function GET(req: NextRequest) {
       const now = new Date();
       const nowMinutes = localMinutes(now);
       const isToday = date === today;
-      slots = slotsBetween(dayCfg.open, dayCfg.close, settings.slotMinutes).map(
-        (time) => {
+      const closeMinutes = toMinutes(dayCfg.close);
+      // Un turno tiene que terminar antes del cierre: los horarios que se pasan
+      // del horario de atención no se ofrecen (el POST los rechazaría).
+      slots = slotsBetween(dayCfg.open, dayCfg.close, settings.slotMinutes)
+        .filter((time) => toMinutes(time) + duration <= closeMinutes)
+        .map((time) => {
           const start = toMinutes(time);
           const past = isToday && start <= nowMinutes;
           const ocupadas = openings.filter((b) =>
@@ -54,8 +58,7 @@ export async function GET(req: NextRequest) {
           ).length;
           const free = !past && ocupadas < sillas;
           return { time, free, ocupadas, sillas };
-        }
-      );
+        });
     }
 
     return Response.json({

@@ -70,12 +70,14 @@ export async function GET(req: NextRequest) {
           } else {
             const sillas = Math.max(1, settings.cantidadBarberos || 1);
             const dayBookings = byDate[date] || [];
+            const closeMinutes = toMinutes(dayCfg.close);
             const free = slotsBetween(
               dayCfg.open,
               dayCfg.close,
               settings.slotMinutes
             ).some((time) => {
               const start = toMinutes(time);
+              if (start + duration > closeMinutes) return false;
               if (isToday && start <= nowMinutes) return false;
               const ocupadas = dayBookings.filter((b) =>
                 overlaps(start, duration, toMinutes(b.time), b.duration)

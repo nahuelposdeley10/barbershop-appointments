@@ -8,6 +8,7 @@ import {
   localDateStr,
   localMinutes,
   toMinutes,
+  toTime,
   weekdayForDate,
   overlaps,
 } from "@/lib/booking-logic";
@@ -99,9 +100,17 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-    if (start < toMinutes(dayCfg.open) || end > toMinutes(dayCfg.close)) {
+    if (start < toMinutes(dayCfg.open)) {
       return Response.json(
-        { error: "Hora fuera del horario de atención" },
+        { error: `El local abre a las ${dayCfg.open}, elegí un horario posterior` },
+        { status: 400 }
+      );
+    }
+    if (end > toMinutes(dayCfg.close)) {
+      return Response.json(
+        {
+          error: `El turno termina ${toTime(end)} y el local cierra a las ${dayCfg.close}. Elegí un horario más temprano.`,
+        },
         { status: 400 }
       );
     }
