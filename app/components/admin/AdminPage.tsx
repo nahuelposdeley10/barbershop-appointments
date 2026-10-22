@@ -4,15 +4,20 @@ import { useEffect, useState } from "react";
 import {
   adminDeleteBooking,
   adminGetBookings,
+  adminGetRevenue,
   adminGetSettings,
   adminUpdateBooking,
   adminUpdateSettings,
   adminUploadImage,
+  superadminCreateTenant,
+  superadminGetTenants,
   AdminBooking,
+  AdminRevenue,
+  SuperadminTenant,
   Settings,
 } from "@/lib/client-api";
 import { BarberPole, ServiceIcon } from "../booking/BarberIcons";
-import Navbar from "../Navbar";
+import Navbar, { type AdminPanelTab } from "../Navbar";
 
 const DAY_NAMES = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const MONTH_NAMES = [
@@ -25,6 +30,7 @@ const STATUS_LABELS: Record<string, string> = {
   cancelled: "Cancelado",
   done: "Completado",
 };
+const AGENDA_PAGE_SIZE = 8;
 
 /** Clase de color del chip. Los turnos viejos ("pending") se ven como activos. */
 function statusClass(status: string) {
@@ -45,23 +51,76 @@ function localDateStr(d: Date) {
   return `${y}-${month}-${day}`;
 }
 
+function toMinutes(time: string) {
+  const [hours, minutes] = time.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
 function formatDate(dateStr: string) {
   const d = new Date(`${dateStr}T00:00:00`);
   return `${DAY_NAMES[d.getDay()]} ${d.getDate()} de ${MONTH_NAMES[d.getMonth()]}`;
 }
 
+const moneyFormatter = new Intl.NumberFormat("es-AR", {
+  style: "currency",
+  currency: "ARS",
+  maximumFractionDigits: 0,
+});
+
+function formatMoney(value: number) {
+  return moneyFormatter.format(value);
+}
+
+function RevenueCard({ label, period }: { label: string; period: AdminRevenue["today"] }) {
+  return (
+    <article className="rounded-2xl border border-[var(--border)] bg-[var(--bg-soft)] p-4 sm:p-5">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-bold text-[var(--muted)]">{label}</p>
+        <span className="rounded-full bg-accent/10 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-accent">
+          {period.appointmentCount} {period.appointmentCount === 1 ? "turno" : "turnos"}
+        </span>
+      </div>
+      <p className="mt-3 text-2xl font-extrabold tracking-tight text-[var(--text)]">{formatMoney(period.total)}</p>
+      <p className="mt-1 text-xs text-[var(--muted)]">Total estimado</p>
+      <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[var(--border)] pt-3 text-xs">
+        <div>
+          <p className="text-[var(--muted)]">Cobrado</p>
+          <p className="mt-1 font-bold text-emerald-400">{formatMoney(period.collected)}</p>
+        </div>
+        <div>
+          <p className="text-[var(--muted)]">Pendiente</p>
+          <p className="mt-1 font-bold text-amber-300">{formatMoney(period.pending)}</p>
+        </div>
+      </div>
+    </article>
+  );
+}
+
 export default function AdminPage({
   token,
+  role,
+  isImpersonating = false,
+  tenantName,
+  tenantSlug,
+  onEnterTenant,
+  onExitImpersonation,
   onLogout,
 }: {
   token: string;
+  role: "superadmin" | "owner";
+  isImpersonating?: boolean;
+  tenantName?: string | null;
+  tenantSlug?: string | null;
+  onEnterTenant?: (tenantId: string) => Promise<void>;
+  onExitImpersonation?: () => Promise<void>;
   onLogout: () => void;
 }) {
   const today = localDateStr(new Date());
-  const [tab, setTab] = useState<"agenda" | "config" | "web" | "imagenes">(() => {
+  const [tab, setTab] = useState<AdminPanelTab>(() => {
+    if (role === "superadmin") return "superadmin";
     if (typeof window !== "undefined") {
       const saved = window.sessionStorage.getItem("adminTab");
-      if (saved === "config" || saved === "web" || saved === "imagenes" || saved === "agenda") {
+      if (saved === "config" || saved === "web" || saved === "imagenes" || saved === "agenda" || saved === "resumen") {
         return saved;
       }
     }
@@ -77,7 +136,13 @@ export default function AdminPage({
   const [date, setDate] = useState(today);
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
+  const [savingNoteId, setSavingNoteId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [revenue, setRevenue] = useState<AdminRevenue | null>(null);
+  const [revenueLoading, setRevenueLoading] = useState(true);
+  const [revenueRefresh, setRevenueRefresh] = useState(0);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [newBlockDate, setNewBlockDate] = useState("");
@@ -89,12 +154,35 @@ export default function AdminPage({
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const [tenants, setTenants] = useState<SuperadminTenant[]>([]);
+  const [tenantForm, setTenantForm] = useState({ name: "", slug: "", ownerEmail: "", ownerPassword: "" });
+  const [tenantModalOpen, setTenantModalOpen] = useState(false);
+  const [creatingTenant, setCreatingTenant] = useState(false);
+  const [tenantMessage, setTenantMessage] = useState("");
+  const [copiedTenantId, setCopiedTenantId] = useState<string | null>(null);
+  const [enteringTenantId, setEnteringTenantId] = useState<string | null>(null);
+  const [leavingTenant, setLeavingTenant] = useState(false);
 
   useEffect(() => {
     window.sessionStorage.setItem("adminTab", tab);
   }, [tab]);
 
   useEffect(() => {
+    if (!tenantModalOpen) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !creatingTenant) setTenantModalOpen(false);
+    }
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [tenantModalOpen, creatingTenant]);
+
+  useEffect(() => {
+    if (role !== "owner") return;
     adminGetSettings(token)
       .then((s) => {
         setSettings(s);
@@ -105,15 +193,35 @@ export default function AdminPage({
         setAdminPassword("");
       })
       .catch((e) => setError(e.message));
-  }, [token]);
+  }, [token, role]);
 
   useEffect(() => {
-    if (tab !== "agenda") return;
+    if (role !== "owner") return;
+    let cancelled = false;
+    adminGetRevenue(token)
+      .then((summary) => {
+        if (!cancelled) setRevenue(summary);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : "No pudimos cargar los ingresos");
+      })
+      .finally(() => {
+        if (!cancelled) setRevenueLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, role, revenueRefresh]);
+
+  useEffect(() => {
+    if (role !== "owner" || tab !== "agenda") return;
     let cancelled = false;
     adminGetBookings(token, { date, status: status || undefined })
       .then((list) => {
         if (!cancelled) {
           setBookings(list);
+          setNoteDrafts(Object.fromEntries(list.map((booking) => [booking._id, booking.adminNote || ""])));
+          setPage(1);
           setError("");
         }
       })
@@ -126,7 +234,14 @@ export default function AdminPage({
     return () => {
       cancelled = true;
     };
-  }, [token, tab, date, status]);
+  }, [token, role, tab, date, status]);
+
+  useEffect(() => {
+    if (role !== "superadmin" || tab !== "superadmin") return;
+    superadminGetTenants(token)
+      .then(setTenants)
+      .catch((e) => setError(e instanceof Error ? e.message : "No pudimos cargar las barberías"));
+  }, [token, role, tab]);
 
   async function changeStatus(id: string, newStatus: string) {
     setError("");
@@ -134,9 +249,106 @@ export default function AdminPage({
       await adminUpdateBooking(token, id, newStatus);
       const list = await adminGetBookings(token, { date, status: status || undefined });
       setBookings(list);
+      setNoteDrafts(Object.fromEntries(list.map((booking) => [booking._id, booking.adminNote || ""])));
+      setRevenueRefresh((value) => value + 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error inesperado");
     }
+  }
+
+  async function saveNote(id: string) {
+    setSavingNoteId(id);
+    setError("");
+    try {
+      const updated = await adminUpdateBooking(token, id, {
+        adminNote: noteDrafts[id] || "",
+      });
+      setBookings((current) => current.map((booking) => (booking._id === id ? updated : booking)));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos guardar la nota");
+    } finally {
+      setSavingNoteId(null);
+    }
+  }
+
+  async function createTenant(e: React.FormEvent) {
+    e.preventDefault();
+    setCreatingTenant(true);
+    setTenantMessage("");
+    setError("");
+    try {
+      const created = await superadminCreateTenant(tenantForm);
+      setTenantMessage(`Barbería creada: ${created.name}. El dueño ya puede ingresar con su email.`);
+      setTenantForm({ name: "", slug: "", ownerEmail: "", ownerPassword: "" });
+      setTenants(await superadminGetTenants(token));
+      setTenantModalOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos crear la barbería");
+    } finally {
+      setCreatingTenant(false);
+    }
+  }
+
+  async function copyTenantLink(tenant: SuperadminTenant) {
+    const link = `${window.location.origin}/b/${tenant.slug}`;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(link);
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = link;
+        textArea.setAttribute("readonly", "");
+        textArea.style.position = "fixed";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.select();
+        const copied = document.execCommand("copy");
+        textArea.remove();
+        if (!copied) throw new Error("copy-failed");
+      }
+      setCopiedTenantId(tenant._id);
+      window.setTimeout(() => {
+        setCopiedTenantId((current) => (current === tenant._id ? null : current));
+      }, 1800);
+    } catch {
+      setError("No pudimos copiar el link. Intentá nuevamente.");
+    }
+  }
+
+  async function enterTenant(tenantId: string) {
+    if (!onEnterTenant) return;
+    setError("");
+    setEnteringTenantId(tenantId);
+    try {
+      await onEnterTenant(tenantId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos abrir el panel");
+    } finally {
+      setEnteringTenantId(null);
+    }
+  }
+
+  async function leaveTenant() {
+    if (!onExitImpersonation) return;
+    setError("");
+    setLeavingTenant(true);
+    try {
+      await onExitImpersonation();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos volver a barberías");
+    } finally {
+      setLeavingTenant(false);
+    }
+  }
+
+  function selectAgendaDate(nextDate: string) {
+    setLoading(true);
+    setDate(nextDate);
+  }
+
+  function selectStatus(nextStatus: string) {
+    setLoading(true);
+    setStatus(nextStatus);
   }
 
   async function removeBooking(id: string, name: string) {
@@ -146,6 +358,8 @@ export default function AdminPage({
       await adminDeleteBooking(token, id);
       const list = await adminGetBookings(token, { date, status: status || undefined });
       setBookings(list);
+      setNoteDrafts(Object.fromEntries(list.map((booking) => [booking._id, booking.adminNote || ""])));
+      setRevenueRefresh((value) => value + 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error inesperado");
     }
@@ -251,6 +465,7 @@ export default function AdminPage({
       try {
         const list = await adminGetBookings(token, { date, status: status || undefined });
         setBookings(list);
+        setNoteDrafts(Object.fromEntries(list.map((booking) => [booking._id, booking.adminNote || ""])));
       } catch {
         // La agenda se refresca sola al cambiar de día.
       }
@@ -404,6 +619,17 @@ export default function AdminPage({
       value.toLowerCase().includes(query)
     );
   });
+  const pageCount = Math.max(1, Math.ceil(visibleBookings.length / AGENDA_PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const paginatedBookings = visibleBookings.slice(
+    (currentPage - 1) * AGENDA_PAGE_SIZE,
+    currentPage * AGENDA_PAGE_SIZE
+  );
+  const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+  const nextBooking = bookings
+    .filter((booking) => booking.status === "confirmed")
+    .filter((booking) => date !== today || toMinutes(booking.time) >= nowMinutes)
+    .sort((a, b) => a.time.localeCompare(b.time))[0];
 
   // Días sin atención: qué está guardado y qué quedó pendiente en el borrador.
   const savedBlocked = settings?.unavailableDates ?? [];
@@ -420,26 +646,34 @@ export default function AdminPage({
       <Navbar
         nombre={settings ? settings.barberName : "Barbería"}
         logo={settings?.imgLogo}
+        adminMode
+        adminRole={role}
+        adminTab={tab}
+        onAdminTabChange={setTab}
+        tenantSlug={tenantSlug}
         onLogout={onLogout}
       />
-      <div className="flex flex-col gap-5 max-w-[720px] lg:max-w-5xl w-full mx-auto pt-24 px-5 pb-16">
+      <div className="flex flex-col gap-4 max-w-[720px] lg:max-w-5xl w-full mx-auto pt-20 px-3 pb-10 sm:gap-5 sm:pt-24 sm:px-5 sm:pb-16">
 
         <BarberPole />
 
-        <nav className="-mx-5 px-5 flex gap-2 overflow-x-auto border-b border-[var(--border)] pb-3 sm:mx-0 sm:px-0 sm:flex-wrap sm:overflow-visible [scrollbar-width:none]">
-          <Tab active={tab === "agenda"} onClick={() => setTab("agenda")}>
-            Agenda de turnos
-          </Tab>
-          <Tab active={tab === "config"} onClick={() => setTab("config")}>
-            Configuración
-          </Tab>
-          <Tab active={tab === "imagenes"} onClick={() => setTab("imagenes")}>
-            Imágenes
-          </Tab>
-          <Tab active={tab === "web"} onClick={() => setTab("web")}>
-            Sitio web
-          </Tab>
-        </nav>
+        {isImpersonating && role === "owner" && (
+          <section className="flex flex-col gap-3 rounded-2xl border border-accent/35 bg-accent/[0.09] p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5" role="status">
+            <div>
+              <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-accent">Modo superadmin</p>
+              <p className="mt-1 font-bold text-[var(--text)]">Administrando {tenantName || tenantSlug || "esta barbería"}</p>
+              <p className="mt-1 text-xs text-[var(--muted)]">Los cambios se guardan en este tenant.</p>
+            </div>
+            <button
+              type="button"
+              onClick={leaveTenant}
+              disabled={leavingTenant}
+              className="min-h-11 shrink-0 rounded-xl border border-accent/50 px-4 py-2.5 text-sm font-bold text-accent transition hover:bg-accent/10 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {leavingTenant ? "Volviendo…" : "Volver a barberías"}
+            </button>
+          </section>
+        )}
 
         {error && (
           <p className="text-[var(--red)] font-semibold bg-red-500/[0.08] border border-red-500/35 rounded-xl px-3.5 py-2.5">
@@ -447,7 +681,166 @@ export default function AdminPage({
           </p>
         )}
 
-        {tab === "agenda" && (
+        {tab === "superadmin" && role === "superadmin" && (
+          <section className="flex flex-col gap-4 sm:gap-5">
+            <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 sm:p-[22px] flex flex-col gap-4 sm:gap-5 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-accent font-extrabold">Superadmin</p>
+                <h2 className="text-xl font-bold mt-2">Barberías y dueños</h2>
+                <p className="text-sm text-[var(--muted)] mt-2 max-w-2xl">
+                  Cada barbería tiene su propia configuración, servicios, agenda y dueño.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setError("");
+                  setTenantMessage("");
+                  setTenantModalOpen(true);
+                }}
+                className="inline-flex min-h-12 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-accent px-5 py-3 font-bold text-zinc-950 transition hover:bg-accent-hover sm:w-auto"
+              >
+                <span aria-hidden="true" className="text-xl leading-none">+</span>
+                Crear barbería
+              </button>
+            </div>
+            {tenantMessage && <p role="status" className="rounded-xl border border-emerald-400/30 bg-emerald-400/[0.08] px-3.5 py-2.5 text-sm font-semibold text-emerald-400">{tenantMessage}</p>}
+            <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 sm:p-[22px]">
+              <h2 className="font-bold">Barberías existentes</h2>
+              {tenants.length === 0 ? (
+                <p className="text-sm text-[var(--muted)] mt-3">Todavía no hay barberías migradas.</p>
+              ) : (
+                <ul className="mt-3 grid gap-2 sm:grid-cols-2 list-none p-0">
+                  {tenants.map((tenant) => (
+                    <li key={tenant._id} className="flex flex-col gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] p-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <strong>{tenant.name}</strong>
+                        <p className="mt-1 truncate text-xs text-[var(--muted)]">/{tenant.slug} · {tenant.ownerId?.email || "sin dueño"}</p>
+                      </div>
+                      <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row">
+                        <button
+                          type="button"
+                          onClick={() => enterTenant(tenant._id)}
+                          disabled={enteringTenantId !== null}
+                          className="min-h-11 rounded-xl bg-accent px-3 py-2 text-sm font-bold text-zinc-950 transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {enteringTenantId === tenant._id ? "Abriendo…" : "Entrar al panel"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => copyTenantLink(tenant)}
+                          className="min-h-11 rounded-xl border border-accent/40 px-3 py-2 text-sm font-bold text-accent transition hover:bg-accent/10"
+                          aria-label={`Copiar link de ${tenant.name}`}
+                        >
+                          {copiedTenantId === tenant._id ? "Copiado" : "Copiar link"}
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            {tenantModalOpen && (
+              <div
+                className="fixed inset-0 z-50 flex items-end justify-center bg-black/65 p-0 sm:items-center sm:p-6"
+                role="presentation"
+                onMouseDown={(event) => {
+                  if (event.target === event.currentTarget && !creatingTenant) setTenantModalOpen(false);
+                }}
+              >
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="create-tenant-title"
+                  className="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-2xl sm:max-w-2xl sm:rounded-3xl sm:p-6"
+                  onMouseDown={(event) => event.stopPropagation()}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.18em] text-accent font-extrabold">Nueva barbería</p>
+                      <h2 id="create-tenant-title" className="mt-2 text-xl font-bold">Crear barbería y dueño</h2>
+                      <p className="mt-2 text-sm text-[var(--muted)]">
+                        La nueva cuenta tendrá su propia agenda y configuración aislada.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label="Cerrar ventana"
+                      disabled={creatingTenant}
+                      onClick={() => setTenantModalOpen(false)}
+                      className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-[var(--border)] text-xl text-[var(--muted)] transition hover:border-accent hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <form onSubmit={createTenant} className="mt-6 grid gap-3 sm:grid-cols-2">
+                    <Field label="Nombre de la barbería">
+                      <input autoFocus className="input" required value={tenantForm.name} onChange={(e) => setTenantForm((current) => ({ ...current, name: e.target.value }))} placeholder="Barbería Centro" />
+                    </Field>
+                    <Field label="Identificador / slug">
+                      <input className="input" required value={tenantForm.slug} onChange={(e) => setTenantForm((current) => ({ ...current, slug: e.target.value }))} placeholder="barberia-centro" />
+                    </Field>
+                    <Field label="Email del dueño">
+                      <input className="input" required type="email" value={tenantForm.ownerEmail} onChange={(e) => setTenantForm((current) => ({ ...current, ownerEmail: e.target.value }))} placeholder="dueno@barberia.com" />
+                    </Field>
+                    <Field label="Contraseña inicial">
+                      <input className="input" required minLength={4} type="password" value={tenantForm.ownerPassword} onChange={(e) => setTenantForm((current) => ({ ...current, ownerPassword: e.target.value }))} placeholder="Mínimo 4 caracteres" />
+                    </Field>
+                    <div className="mt-2 flex flex-col-reverse gap-3 sm:col-span-2 sm:flex-row sm:justify-end">
+                      <button
+                        type="button"
+                        disabled={creatingTenant}
+                        onClick={() => setTenantModalOpen(false)}
+                        className="min-h-12 rounded-xl border border-[var(--border)] px-5 py-3 font-bold text-[var(--muted)] transition hover:border-[var(--text)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={creatingTenant}
+                        className="min-h-12 rounded-xl bg-accent px-5 py-3 font-bold text-zinc-950 transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {creatingTenant ? "Creando…" : "Crear barbería"}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {tab === "resumen" && role === "owner" && (
+          <section className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 sm:p-[22px]">
+            <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-accent">Resumen financiero</p>
+                <h2 className="mt-1 text-xl font-bold">Ingresos de tu barbería</h2>
+              </div>
+              <p className="text-xs text-[var(--muted)]">Cancelados no cuentan · completados = cobrado</p>
+            </div>
+            {revenueLoading ? (
+              <div className="grid gap-3 md:grid-cols-3">
+                {["Hoy", "Esta semana", "Este mes"].map((label) => (
+                  <div key={label} className="h-40 animate-pulse rounded-2xl bg-[var(--bg-soft)]" aria-label={`Cargando ${label}`} />
+                ))}
+              </div>
+            ) : revenue ? (
+              <div className="grid gap-3 md:grid-cols-3">
+                <RevenueCard label="Hoy" period={revenue.today} />
+                <RevenueCard label="Esta semana" period={revenue.week} />
+                <RevenueCard label="Este mes" period={revenue.month} />
+              </div>
+            ) : (
+              <p className="rounded-xl border border-amber-300/30 bg-amber-300/[0.08] px-3.5 py-3 text-sm text-amber-200">
+                Todavía no pudimos cargar el resumen financiero.
+              </p>
+            )}
+          </section>
+        )}
+
+        {tab === "agenda" && role === "owner" && (
           <>
             <section className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 sm:p-[22px]">
               <div className="flex items-end gap-2 sm:flex-1 sm:min-w-[220px]">
@@ -456,13 +849,13 @@ export default function AdminPage({
                     type="date"
                     className="input"
                     value={date}
-                    onChange={(e) => setDate(e.target.value)}
+                    onChange={(e) => selectAgendaDate(e.target.value)}
                   />
                 </Field>
                 <button
                   type="button"
                   className="shrink-0 px-4 py-3 rounded-xl bg-[var(--card-2)] border border-[var(--border)] font-bold text-sm hover:border-[var(--accent)]"
-                  onClick={() => setDate(today)}
+                  onClick={() => selectAgendaDate(today)}
                 >
                   Hoy
                 </button>
@@ -483,27 +876,38 @@ export default function AdminPage({
                 cls="text-[var(--text)] border-[var(--border)]"
                 label={status === "" ? `Todos (${bookings.length})` : "Todos"}
                 active={status === ""}
-                onClick={() => setStatus("")}
+                onClick={() => selectStatus("")}
               />
               <Stat
                 cls="text-blue-400 border-blue-400/40"
                 label={plural(stats.confirmed, "activo")}
                 active={status === "confirmed"}
-                onClick={() => setStatus(status === "confirmed" ? "" : "confirmed")}
+                onClick={() => selectStatus(status === "confirmed" ? "" : "confirmed")}
               />
               <Stat
                 cls="text-emerald-400 border-emerald-400/40"
                 label={plural(stats.done, "completado")}
                 active={status === "done"}
-                onClick={() => setStatus(status === "done" ? "" : "done")}
+                onClick={() => selectStatus(status === "done" ? "" : "done")}
               />
               <Stat
                 cls="text-[var(--muted)] border-[var(--muted)]/40"
                 label={plural(stats.cancelled, "cancelado")}
                 active={status === "cancelled"}
-                onClick={() => setStatus(status === "cancelled" ? "" : "cancelled")}
+                onClick={() => selectStatus(status === "cancelled" ? "" : "cancelled")}
               />
             </div>
+
+            {nextBooking && (
+              <section className="rounded-2xl border border-accent/30 bg-accent/[0.08] px-4 py-3.5 sm:px-5 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.16em] font-extrabold text-accent">Siguiente turno</p>
+                  <p className="font-bold text-[15px] mt-1">{nextBooking.time} · {nextBooking.name}</p>
+                  <p className="text-[13px] text-[var(--muted)]">{nextBooking.service} · {nextBooking.duration} min</p>
+                </div>
+                <span className="st confirmed">Activo</span>
+              </section>
+            )}
 
             <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 sm:p-[22px] flex flex-col gap-3.5">
               <h2 className="text-[16px] sm:text-[17px] font-bold">
@@ -520,7 +924,7 @@ export default function AdminPage({
                 </p>
               ) : (
                 <ul className="grid grid-cols-1 lg:grid-cols-2 gap-2.5 list-none m-0 p-0">
-                  {visibleBookings.map((b) => (
+                  {paginatedBookings.map((b) => (
                     <li
                       key={b._id}
                       className={`flex flex-col gap-2.5 sm:grid sm:grid-cols-[64px_1fr_auto] sm:gap-3.5 sm:items-start bg-[var(--bg-soft)] border border-[var(--border)] rounded-[14px] p-3.5 ${
@@ -549,6 +953,28 @@ export default function AdminPage({
                         </div>
                         <div className="text-[13px] sm:text-sm text-[var(--muted)]">
                           {b.phone}
+                        </div>
+                        <div className="mt-2 flex flex-col gap-2">
+                          <label className="text-[11px] font-bold uppercase tracking-wide text-[var(--muted)]" htmlFor={`note-${b._id}`}>
+                            Nota privada
+                          </label>
+                          <div className="flex flex-col gap-2 sm:flex-row">
+                            <textarea
+                              id={`note-${b._id}`}
+                              className="input min-h-16 resize-y text-[13px]"
+                              maxLength={500}
+                              value={noteDrafts[b._id] ?? ""}
+                              onChange={(event) => setNoteDrafts((current) => ({ ...current, [b._id]: event.target.value }))}
+                              placeholder="Preferencias o información interna"
+                            />
+                            <SmallBtn
+                              cls="shrink-0 bg-[var(--card-2)] text-[var(--muted)] border-[var(--border)] sm:self-end"
+                              onClick={() => saveNote(b._id)}
+                              disabled={savingNoteId === b._id}
+                            >
+                              {savingNoteId === b._id ? "Guardando…" : "Guardar nota"}
+                            </SmallBtn>
+                          </div>
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-2 sm:flex-col sm:items-end sm:gap-1.5">
@@ -583,12 +1009,33 @@ export default function AdminPage({
                   ))}
                 </ul>
               )}
+              {pageCount > 1 && (
+                <div className="flex items-center justify-between gap-3 border-t border-[var(--border)] pt-3">
+                  <span className="text-xs text-[var(--muted)]">Página {currentPage} de {pageCount}</span>
+                  <div className="flex gap-2">
+                    <SmallBtn
+                      cls="bg-[var(--card-2)] text-[var(--muted)] border-[var(--border)]"
+                      onClick={() => setPage((current) => Math.max(1, current - 1))}
+                      disabled={currentPage === 1}
+                    >
+                      Anterior
+                    </SmallBtn>
+                    <SmallBtn
+                      cls="bg-[var(--card-2)] text-[var(--muted)] border-[var(--border)]"
+                      onClick={() => setPage((current) => Math.min(pageCount, current + 1))}
+                      disabled={currentPage === pageCount}
+                    >
+                      Siguiente
+                    </SmallBtn>
+                  </div>
+                </div>
+              )}
             </section>
           </>
         )}
 
         {tab === "config" && draft && (
-          <form className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-[22px] flex flex-col gap-3.5" onSubmit={saveSettings}>
+          <form className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 sm:p-[22px] flex flex-col gap-3 sm:gap-3.5" onSubmit={saveSettings}>
             <h2 className="text-[17px] font-bold">Configuración</h2>
 
             <Field label="Nombre del local / barbería">
@@ -977,7 +1424,7 @@ export default function AdminPage({
 
         {tab === "web" && draft && (
           <form
-            className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-[22px] flex flex-col gap-3.5"
+            className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 sm:p-[22px] flex flex-col gap-3 sm:gap-3.5"
             onSubmit={saveSettings}
           >
             <h2 className="text-[17px] font-bold">Sitio web</h2>
@@ -1140,7 +1587,7 @@ export default function AdminPage({
         )}
 
         {tab === "imagenes" && draft && (
-          <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-[22px] flex flex-col gap-5">
+          <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 sm:p-[22px] flex flex-col gap-4 sm:gap-5">
             <div>
               <h2 className="text-[17px] font-bold">Imágenes del sitio</h2>
               <p className="text-[var(--muted)] text-[13px] mt-1">
@@ -1408,30 +1855,6 @@ export default function AdminPage({
   );
 }
 
-function Tab({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`shrink-0 px-3.5 py-2 rounded-xl text-[14px] sm:text-[15px] font-bold ${
-        active
-          ? "bg-accent/15 text-accent"
-          : "bg-transparent text-[var(--muted)] hover:text-[var(--text)]"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
 function Field({
   label,
   children,
@@ -1548,16 +1971,19 @@ function SmallBtn({
   children,
   onClick,
   cls,
+  disabled = false,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   cls: string;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`px-3 py-2 sm:px-2.5 sm:py-1.5 text-[12.5px] rounded-lg font-bold border ${cls}`}
+      disabled={disabled}
+      className={`px-3 py-2 sm:px-2.5 sm:py-1.5 text-[12.5px] rounded-lg font-bold border ${cls} disabled:opacity-50 disabled:cursor-not-allowed`}
     >
       {children}
     </button>

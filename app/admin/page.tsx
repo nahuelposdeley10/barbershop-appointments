@@ -3,7 +3,13 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import AdminLogin from "../components/admin/AdminLogin";
 import AdminPage from "../components/admin/AdminPage";
-import { adminLogout, adminSession } from "@/lib/client-api";
+import {
+  adminExitTenant,
+  adminLogout,
+  adminSession,
+  superadminEnterTenant,
+  type AdminSession,
+} from "@/lib/client-api";
 
 export default function Admin() {
   const mounted = useSyncExternalStore(
@@ -11,29 +17,55 @@ export default function Admin() {
     () => true,
     () => false
   );
-  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+  const [session, setSession] = useState<AdminSession | null>(null);
 
   useEffect(() => {
     adminSession()
-      .then((result) => setAuthenticated(result.authenticated))
-      .catch(() => setAuthenticated(false));
+      .then((result) => setSession(result.authenticated ? result : { authenticated: false }))
+      .catch(() => setSession({ authenticated: false }));
   }, []);
 
   function handleLogin() {
-    setAuthenticated(true);
+    adminSession()
+      .then((result) => setSession(result))
+      .catch(() => setSession({ authenticated: true }));
   }
 
   async function handleLogout() {
     await adminLogout().catch(() => undefined);
-    setAuthenticated(false);
+    setSession({ authenticated: false });
   }
 
-  if (!mounted || authenticated === null) {
+  async function handleEnterTenant(tenantId: string) {
+    await superadminEnterTenant(tenantId);
+    const result = await adminSession();
+    setSession(result);
+  }
+
+  async function handleExitImpersonation() {
+    await adminExitTenant();
+    const result = await adminSession();
+    setSession(result);
+  }
+
+  if (!mounted || session === null) {
     return <AdminSpinner />;
   }
 
-  if (authenticated) {
-    return <AdminPage token="session" onLogout={handleLogout} />;
+  if (session.authenticated) {
+    return (
+      <AdminPage
+        key={`${session.role || "owner"}:${session.tenantId || "central"}`}
+        token="session"
+        role={session.role || "owner"}
+        isImpersonating={Boolean(session.isImpersonating)}
+        tenantName={session.tenantName}
+        tenantSlug={session.tenantSlug}
+        onEnterTenant={handleEnterTenant}
+        onExitImpersonation={handleExitImpersonation}
+        onLogout={handleLogout}
+      />
+    );
   }
   return <AdminLogin onLogin={handleLogin} />;
 }

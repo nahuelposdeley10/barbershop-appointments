@@ -2,6 +2,10 @@
 
 const BASE = "/api";
 
+function tenantQuery(tenantSlug?: string) {
+  return tenantSlug ? `&tenant=${encodeURIComponent(tenantSlug)}` : "";
+}
+
 export type Service = {
   name: string;
   price: number;
@@ -34,7 +38,23 @@ export type BookingConfirmation = {
   address?: string;
 };
 
-export type AdminBooking = BookingConfirmation & { _id: string };
+export type AdminBooking = BookingConfirmation & { _id: string; adminNote?: string };
+
+export type RevenuePeriod = {
+  from: string;
+  to: string;
+  total: number;
+  collected: number;
+  pending: number;
+  appointmentCount: number;
+};
+
+export type AdminRevenue = {
+  asOf: string;
+  today: RevenuePeriod;
+  week: RevenuePeriod;
+  month: RevenuePeriod;
+};
 
 export type Settings = {
   barberName: string;
@@ -73,6 +93,24 @@ export type Settings = {
   unavailableDates: string[];
 };
 
+export type AdminSession = {
+  authenticated: boolean;
+  role?: "superadmin" | "owner";
+  tenantId?: string | null;
+  email?: string;
+  isImpersonating?: boolean;
+  tenantName?: string | null;
+  tenantSlug?: string | null;
+};
+
+export type SuperadminTenant = {
+  _id: string;
+  slug: string;
+  name: string;
+  status: "active" | "suspended";
+  ownerId: { email: string };
+};
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     ...options,
@@ -89,19 +127,21 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 export function getAvailability(
   date: string,
-  service?: string
+  service?: string,
+  tenantSlug?: string
 ): Promise<AvailabilityData> {
   return request(
-    `/availability?date=${date}&service=${encodeURIComponent(service || "")}`
+    `/availability?date=${date}&service=${encodeURIComponent(service || "")}${tenantQuery(tenantSlug)}`
   );
 }
 
 export function getMonthAvailability(
   from: string,
-  service?: string
+  service?: string,
+  tenantSlug?: string
 ): Promise<{ days: { date: string; status: string }[] }> {
   return request(
-    `/month?from=${from}&service=${encodeURIComponent(service || "")}`
+    `/month?from=${from}&service=${encodeURIComponent(service || "")}${tenantQuery(tenantSlug)}`
   );
 }
 
@@ -111,8 +151,11 @@ export function createBooking(payload: {
   service: string;
   date: string;
   time: string;
-}): Promise<BookingConfirmation> {
-  return request("/bookings", { method: "POST", body: JSON.stringify(payload) });
+}, tenantSlug?: string): Promise<BookingConfirmation> {
+  return request(`/bookings${tenantSlug ? `?tenant=${encodeURIComponent(tenantSlug)}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export function cancelBooking(token: string): Promise<BookingConfirmation> {
@@ -140,8 +183,36 @@ export function adminLogin(email: string, password: string): Promise<{ authentic
   });
 }
 
-export function adminSession(): Promise<{ authenticated: boolean }> {
+export function adminSession(): Promise<AdminSession> {
   return request("/admin/session");
+}
+
+export function superadminGetTenants(_token?: string): Promise<SuperadminTenant[]> {
+  void _token;
+  return request("/superadmin/tenants");
+}
+
+export function superadminCreateTenant(payload: {
+  name: string;
+  slug: string;
+  ownerEmail: string;
+  ownerPassword: string;
+}, _token?: string): Promise<{ id: string; slug: string; name: string; ownerEmail: string }> {
+  void _token;
+  return request("/superadmin/tenants", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function superadminEnterTenant(tenantId: string): Promise<AdminSession> {
+  return request(`/superadmin/tenants/${encodeURIComponent(tenantId)}/enter`, {
+    method: "POST",
+  });
+}
+
+export function adminExitTenant(): Promise<AdminSession> {
+  return request("/admin/leave-tenant", { method: "POST" });
 }
 
 export function adminLogout(): Promise<{ authenticated: false }> {
@@ -159,14 +230,20 @@ export function adminGetBookings(
   return request(`/admin/bookings${qs ? `?${qs}` : ""}`);
 }
 
+export function adminGetRevenue(token: string): Promise<AdminRevenue> {
+  void token;
+  return request("/admin/revenue");
+}
+
 export function adminUpdateBooking(
   token: string,
   id: string,
-  status: string
+  changes: { status?: string; adminNote?: string } | string
 ): Promise<AdminBooking> {
+  const body = typeof changes === "string" ? { status: changes } : changes;
   return request(`/admin/bookings/${id}`, {
     method: "PATCH",
-    body: JSON.stringify({ status }),
+    body: JSON.stringify(body),
   });
 }
 
