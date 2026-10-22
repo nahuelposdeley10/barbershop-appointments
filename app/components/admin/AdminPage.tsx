@@ -1047,6 +1047,9 @@ export default function AdminPage({
               <span className="text-[var(--muted)] text-xs font-normal">
                 Si lo dejás vacío, arriba se muestra solo el logo (o la tijera).
               </span>
+              <span className="text-[var(--muted)] text-xs font-normal">
+                Cambiar este nombre no modifica la URL pública ni los links compartidos.
+              </span>
             </Field>
 
             <Field label="Mensaje para los clientes">
