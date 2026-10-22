@@ -25,23 +25,20 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     if (!mongoose.isValidObjectId(id)) {
       return Response.json({ error: "ID inválido" }, { status: 400 });
     }
-    let body: { status?: string; paymentStatus?: string; adminNote?: string } = {};
+    let body: { status?: string; paymentStatus?: string } = {};
     try {
       body = await req.json();
     } catch {
       return Response.json({ error: "Cuerpo inválido" }, { status: 400 });
     }
-    const { status, paymentStatus, adminNote } = body || {};
+    const { status, paymentStatus } = body || {};
     if (status !== undefined && (typeof status !== "string" || !STATUS.includes(status as typeof STATUS[number]))) {
       return Response.json({ error: "Estado inválido" }, { status: 400 });
     }
     if (paymentStatus !== undefined && (typeof paymentStatus !== "string" || !PAYMENT_STATUS.includes(paymentStatus as typeof PAYMENT_STATUS[number]))) {
       return Response.json({ error: "Estado de pago inválido" }, { status: 400 });
     }
-    if (adminNote !== undefined && (typeof adminNote !== "string" || adminNote.length > 500)) {
-      return Response.json({ error: "La nota no puede superar los 500 caracteres" }, { status: 400 });
-    }
-    if (status === undefined && paymentStatus === undefined && adminNote === undefined) {
+    if (status === undefined && paymentStatus === undefined) {
       return Response.json({ error: "No hay cambios para guardar" }, { status: 400 });
     }
     await connectDB();
@@ -57,19 +54,18 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     if (status !== undefined && status !== current.status && !transitions[current.status]?.includes(status)) {
       return Response.json({ error: "Ese cambio de estado no está permitido" }, { status: 409 });
     }
-    const update: { status?: string; paymentStatus?: string; adminNote?: string; cancelledAt?: Date; cancelledBy?: string } = {};
+    const update: { status?: string; paymentStatus?: string; cancelledAt?: Date; cancelledBy?: string } = {};
     if (status !== undefined) update.status = status;
     if (paymentStatus !== undefined) update.paymentStatus = paymentStatus;
     if (status === "cancelled" && current.status !== "cancelled") {
       update.cancelledAt = new Date();
       update.cancelledBy = context.userId;
     }
-    if (adminNote !== undefined) update.adminNote = adminNote.trim();
     const booking = await Booking.findOneAndUpdate(
       { _id: id, ...tenantFilter(context.tenantId) },
       update,
       { new: true }
-    ).select("+adminNote");
+    );
     if (!booking) {
       return Response.json({ error: "Turno no encontrado" }, { status: 404 });
     }
@@ -79,7 +75,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       action: "booking.updated",
       entityType: "booking",
       entityId: id,
-      metadata: { status, paymentStatus, noteChanged: adminNote !== undefined },
+      metadata: { status, paymentStatus },
     });
     return Response.json(booking);
   } catch (err) {

@@ -39,7 +39,7 @@ export type BookingConfirmation = {
   address?: string;
 };
 
-export type AdminBooking = BookingConfirmation & { _id: string; adminNote?: string };
+export type AdminBooking = BookingConfirmation;
 
 export type RevenuePeriod = {
   from: string;
@@ -259,7 +259,7 @@ export function adminGetRevenue(
 export function adminUpdateBooking(
   token: string,
   id: string,
-  changes: { status?: string; paymentStatus?: "pending" | "paid" | "refunded"; adminNote?: string } | string
+  changes: { status?: string; paymentStatus?: "pending" | "paid" | "refunded" } | string
 ): Promise<AdminBooking> {
   const body = typeof changes === "string" ? { status: changes } : changes;
   return request(`/admin/bookings/${id}`, {

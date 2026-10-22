@@ -287,9 +287,6 @@ export default function AdminPage({
   const [agendaMessage, setAgendaMessage] = useState("");
   const [page, setPage] = useState(1);
   const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
-  const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
-  const [openNotes, setOpenNotes] = useState<Record<string, boolean>>({});
-  const [savingNoteId, setSavingNoteId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [revenue, setRevenue] = useState<AdminRevenue | null>(null);
   const [revenueLoading, setRevenueLoading] = useState(true);
@@ -394,7 +391,6 @@ export default function AdminPage({
       .then((list) => {
         if (!cancelled) {
           setBookings(list);
-          setNoteDrafts(Object.fromEntries(list.map((booking) => [booking._id, booking.adminNote || ""])));
           setPage(1);
           setError("");
         }
@@ -445,25 +441,9 @@ export default function AdminPage({
       );
       const list = await adminGetBookings(token, { date, status: status || undefined });
       setBookings(list);
-      setNoteDrafts(Object.fromEntries(list.map((booking) => [booking._id, booking.adminNote || ""])));
       setRevenueRefresh((value) => value + 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error inesperado");
-    }
-  }
-
-  async function saveNote(id: string) {
-    setSavingNoteId(id);
-    setError("");
-    try {
-      const updated = await adminUpdateBooking(token, id, {
-        adminNote: noteDrafts[id] || "",
-      });
-      setBookings((current) => current.map((booking) => (booking._id === id ? updated : booking)));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "No pudimos guardar la nota");
-    } finally {
-      setSavingNoteId(null);
     }
   }
 
@@ -571,7 +551,6 @@ export default function AdminPage({
         status: status || undefined,
       });
       setBookings(list);
-      setNoteDrafts(Object.fromEntries(list.map((booking) => [booking._id, booking.adminNote || ""])));
       setRevenueRefresh((value) => value + 1);
       setAgendaMessage("Servicio registrado como completado y sumado al resumen.");
       setManualBookingOpen(false);
@@ -605,7 +584,6 @@ export default function AdminPage({
       await adminDeleteBooking(token, bookingToDelete.id);
       const list = await adminGetBookings(token, { date, status: status || undefined });
       setBookings(list);
-      setNoteDrafts(Object.fromEntries(list.map((booking) => [booking._id, booking.adminNote || ""])));
       setRevenueRefresh((value) => value + 1);
       setBookingToDelete(null);
     } catch (e) {
@@ -715,7 +693,6 @@ export default function AdminPage({
       try {
         const list = await adminGetBookings(token, { date, status: status || undefined });
         setBookings(list);
-        setNoteDrafts(Object.fromEntries(list.map((booking) => [booking._id, booking.adminNote || ""])));
       } catch {
         // La agenda se refresca sola al cambiar de día.
       }
@@ -1354,7 +1331,6 @@ export default function AdminPage({
                 <ul className="m-0 grid list-none grid-cols-1 gap-2 p-0">
                   {paginatedBookings.map((b) => {
                     const expanded = expandedBookingId === b._id;
-                    const hasNote = Boolean(noteDrafts[b._id]);
                     const phoneHref = b.phone ? `tel:${b.phone.replace(/[^\d+]/g, "")}` : undefined;
                     return (
                       <li
@@ -1437,49 +1413,6 @@ export default function AdminPage({
                                   {b.status === "done" && <span className="mt-0.5 block text-[11px] font-bold text-emerald-400">Cobrado</span>}
                                 </span>
                               </div>
-                            </div>
-
-                            <div className="mt-2.5 rounded-xl border border-dashed border-[var(--border)] bg-[var(--card)] p-3">
-                              <div className="flex items-center justify-between gap-3">
-                                <div className="min-w-0">
-                                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--muted)]">Nota privada</p>
-                                  {hasNote && !openNotes[b._id] && <p className="mt-1 truncate text-sm text-[var(--text)]">{noteDrafts[b._id]}</p>}
-                                </div>
-                                <button
-                                  type="button"
-                                  aria-expanded={Boolean(openNotes[b._id])}
-                                  aria-controls={`note-editor-${b._id}`}
-                                  onClick={() => setOpenNotes((current) => ({ ...current, [b._id]: !current[b._id] }))}
-                                  className="inline-flex min-h-9 shrink-0 items-center gap-2 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-[12px] font-bold text-[var(--muted)] transition hover:border-accent hover:text-accent"
-                                >
-                                  {hasNote ? "Editar nota" : "Agregar nota"}
-                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={openNotes[b._id] ? "rotate-180 transition-transform" : "transition-transform"} aria-hidden="true">
-                                    <path d="m6 9 6 6 6-6" />
-                                  </svg>
-                                </button>
-                              </div>
-                              {openNotes[b._id] && (
-                                <div id={`note-editor-${b._id}`} className="mt-2 flex flex-col gap-2">
-                                  <label className="sr-only" htmlFor={`note-${b._id}`}>Nota privada</label>
-                                  <div className="flex flex-col gap-2 sm:flex-row">
-                                    <textarea
-                                      id={`note-${b._id}`}
-                                      className="input min-h-16 resize-y text-[13px]"
-                                      maxLength={500}
-                                      value={noteDrafts[b._id] ?? ""}
-                                      onChange={(event) => setNoteDrafts((current) => ({ ...current, [b._id]: event.target.value }))}
-                                      placeholder="Preferencias o información interna"
-                                    />
-                                    <SmallBtn
-                                      cls="shrink-0 bg-[var(--card-2)] text-[var(--muted)] border-[var(--border)] sm:self-end"
-                                      onClick={() => saveNote(b._id)}
-                                      disabled={savingNoteId === b._id}
-                                    >
-                                      {savingNoteId === b._id ? "Guardando…" : "Guardar nota"}
-                                    </SmallBtn>
-                                  </div>
-                                </div>
-                              )}
                             </div>
 
                             <div className="mt-3 flex flex-wrap gap-2 border-t border-[var(--border)] pt-3">

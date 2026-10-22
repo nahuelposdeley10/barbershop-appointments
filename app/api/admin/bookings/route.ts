@@ -150,7 +150,6 @@ export async function GET(req: NextRequest) {
       filter.status = status;
     }
     const bookings = await Booking.find(filter)
-      .select("+adminNote")
       .sort({ date: 1, time: 1 })
       .lean();
     return Response.json(bookings);
