@@ -642,7 +642,7 @@ export default function AdminPage({
     Boolean(draft && settings) && JSON.stringify(draft) !== JSON.stringify(settings);
 
   return (
-    <div className="booking-bg">
+    <div className="booking-bg overflow-x-hidden">
       <Navbar
         nombre={settings ? settings.barberName : "Barbería"}
         logo={settings?.imgLogo}
@@ -871,7 +871,7 @@ export default function AdminPage({
               </Field>
             </section>
 
-            <div className="-mx-5 px-5 flex gap-2 overflow-x-auto pb-1 sm:mx-0 sm:px-0 sm:flex-wrap sm:overflow-visible sm:pb-0 [scrollbar-width:none]">
+            <div className="flex flex-wrap gap-2 pb-1 sm:pb-0">
               <Stat
                 cls="text-[var(--text)] border-[var(--border)]"
                 label={status === "" ? `Todos (${bookings.length})` : "Todos"}
@@ -927,7 +927,7 @@ export default function AdminPage({
                   {paginatedBookings.map((b) => (
                     <li
                       key={b._id}
-                      className={`flex flex-col gap-2.5 sm:grid sm:grid-cols-[64px_1fr_auto] sm:gap-3.5 sm:items-start bg-[var(--bg-soft)] border border-[var(--border)] rounded-[14px] p-3.5 ${
+                      className={`flex min-w-0 flex-col gap-2.5 sm:grid sm:grid-cols-[64px_1fr_auto] sm:gap-3.5 sm:items-start bg-[var(--bg-soft)] border border-[var(--border)] rounded-[14px] p-3.5 ${
                         b.status === "cancelled" ? "booking-cancelled" : ""
                       }`}
                     >
@@ -939,19 +939,19 @@ export default function AdminPage({
                       </div>
                       <div className="flex flex-col gap-[3px] min-w-0">
                         <div className="flex gap-2.5 items-center flex-wrap text-sm">
-                          <strong>{b.name}</strong>
+                          <strong className="min-w-0 break-words">{b.name}</strong>
                           <span className={`st ${statusClass(b.status)} hidden sm:inline-block`}>
                             {STATUS_LABELS[b.status] || "Activo"}
                           </span>
                         </div>
-                        <div className="flex gap-x-2 gap-y-1 items-center flex-wrap text-[13px] sm:text-sm text-[var(--muted)]">
+                        <div className="flex gap-x-2 gap-y-1 items-center flex-wrap break-words text-[13px] sm:text-sm text-[var(--muted)]">
                           <span>{b.service}</span>
                           <span aria-hidden="true">·</span>
                           <span>${Number(b.price || 0).toLocaleString("es-AR")}</span>
                           <span aria-hidden="true">·</span>
                           <span>{b.duration} min</span>
                         </div>
-                        <div className="text-[13px] sm:text-sm text-[var(--muted)]">
+                        <div className="break-words text-[13px] sm:text-sm text-[var(--muted)]">
                           {b.phone}
                         </div>
                         <div className="mt-2 flex flex-col gap-2">
