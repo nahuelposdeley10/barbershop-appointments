@@ -286,6 +286,7 @@ export default function AdminPage({
   const [savingManualBooking, setSavingManualBooking] = useState(false);
   const [agendaMessage, setAgendaMessage] = useState("");
   const [page, setPage] = useState(1);
+  const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
   const [openNotes, setOpenNotes] = useState<Record<string, boolean>>({});
   const [savingNoteId, setSavingNoteId] = useState<string | null>(null);
@@ -541,6 +542,7 @@ export default function AdminPage({
     setLoading(true);
     setDate(nextDate);
     setDatePickerOpen(false);
+    setExpandedBookingId(null);
   }
 
   function openManualBooking() {
@@ -1349,122 +1351,175 @@ export default function AdminPage({
                   No hay turnos para esta selección.
                 </p>
               ) : (
-                <ul className="grid grid-cols-1 lg:grid-cols-2 gap-2.5 list-none m-0 p-0">
-                  {paginatedBookings.map((b) => (
-                    <li
-                      key={b._id}
-                      className={`flex min-w-0 flex-col gap-2.5 sm:grid sm:grid-cols-[64px_1fr_auto] sm:gap-3.5 sm:items-start bg-[var(--bg-soft)] border border-[var(--border)] rounded-[14px] p-3.5 ${
-                        b.status === "cancelled" ? "booking-cancelled" : ""
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2 sm:block">
-                        <span className="text-lg font-extrabold text-accent sm:pt-0.5">
-                          {b.time}
-                        </span>
-                        <span className={`st ${statusClass(b.status)} sm:hidden`}>{STATUS_LABELS[b.status] || "Activo"}</span>
-                      </div>
-                      <div className="flex flex-col gap-[3px] min-w-0">
-                        <div className="flex gap-2.5 items-center flex-wrap text-sm">
-                          <strong className="min-w-0 break-words">{b.name}</strong>
-                          <span className={`st ${statusClass(b.status)} hidden sm:inline-block`}>
-                            {STATUS_LABELS[b.status] || "Activo"}
-                          </span>
-                        </div>
-                        <div className="flex gap-x-2 gap-y-1 items-center flex-wrap break-words text-[13px] sm:text-sm text-[var(--muted)]">
-                          <span>{b.service}</span>
-                          <span aria-hidden="true">·</span>
-                          <span>${Number(b.price || 0).toLocaleString("es-AR")}</span>
-                          <span aria-hidden="true">·</span>
-                          <span>{b.duration} min</span>
-                          {b.status === "done" && (
-                            <span className="rounded-full border border-emerald-400/30 px-2 py-0.5 text-[11px] font-bold text-emerald-400">
-                              Cobrado
+                <ul className="m-0 grid list-none grid-cols-1 gap-2 p-0">
+                  {paginatedBookings.map((b) => {
+                    const expanded = expandedBookingId === b._id;
+                    const hasNote = Boolean(noteDrafts[b._id]);
+                    const phoneHref = b.phone ? `tel:${b.phone.replace(/[^\d+]/g, "")}` : undefined;
+                    return (
+                      <li
+                        key={b._id}
+                        className={`min-w-0 overflow-hidden rounded-2xl border bg-[var(--bg-soft)] transition ${
+                          expanded ? "border-accent/60 shadow-[0_12px_30px_rgba(0,0,0,0.16)]" : "border-[var(--border)]"
+                        } ${b.status === "cancelled" ? "booking-cancelled" : ""}`}
+                      >
+                        <button
+                          type="button"
+                          aria-expanded={expanded}
+                          aria-controls={`booking-details-${b._id}`}
+                          onClick={() => setExpandedBookingId((current) => current === b._id ? null : b._id)}
+                          className="flex min-h-[74px] w-full min-w-0 items-center gap-3 px-3.5 py-3 text-left transition hover:bg-[var(--card-2)] sm:min-h-[68px] sm:gap-4 sm:px-4"
+                        >
+                          <span className="w-12 shrink-0 text-base font-extrabold text-accent sm:w-14 sm:text-lg">{b.time}</span>
+                          <span
+                            className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                              b.status === "done" ? "bg-emerald-400" : b.status === "cancelled" ? "bg-red-400" : "bg-accent"
+                            }`}
+                            aria-hidden="true"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="flex min-w-0 items-center gap-2">
+                              <strong className="min-w-0 truncate text-sm sm:text-[15px]">{b.name}</strong>
+                              <span className={`st hidden shrink-0 sm:inline-flex ${statusClass(b.status)}`}>
+                                {STATUS_LABELS[b.status] || "Activo"}
+                              </span>
                             </span>
-                          )}
-                        </div>
-                        {b.phone && (
-                          <div className="break-words text-[13px] sm:text-sm text-[var(--muted)]">
-                            {b.phone}
-                          </div>
-                        )}
-                        <div className="mt-2">
-                          <button
-                            type="button"
-                            aria-expanded={Boolean(openNotes[b._id] || noteDrafts[b._id])}
-                            aria-controls={`note-editor-${b._id}`}
-                            onClick={() => setOpenNotes((current) => ({ ...current, [b._id]: !current[b._id] }))}
-                            className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-dashed border-[var(--border)] px-2.5 py-1.5 text-[12px] font-bold text-[var(--muted)] transition hover:border-accent hover:text-accent"
+                            <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[12px] text-[var(--muted)] sm:text-[13px]">
+                              <span className="truncate">{b.service}</span>
+                              <span aria-hidden="true">·</span>
+                              <span className="shrink-0">{b.duration} min</span>
+                            </span>
+                          </span>
+                          <span className="hidden shrink-0 text-sm font-extrabold text-accent sm:block">{formatMoney(Number(b.price || 0))}</span>
+                          <span className={`st shrink-0 sm:hidden ${statusClass(b.status)}`}>{STATUS_LABELS[b.status] || "Activo"}</span>
+                          <svg
+                            width="18"
+                            height="18"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            className={`shrink-0 text-[var(--muted)] transition-transform ${expanded ? "rotate-180 text-accent" : ""}`}
+                            aria-hidden="true"
                           >
-                            {noteDrafts[b._id] ? "Editar nota privada" : "Agregar nota privada"}
-                            <svg
-                              width="14"
-                              height="14"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              className={openNotes[b._id] || noteDrafts[b._id] ? "rotate-180 transition-transform" : "transition-transform"}
-                              aria-hidden="true"
-                            >
-                              <path d="m6 9 6 6 6-6" />
-                            </svg>
-                          </button>
-                          {(openNotes[b._id] || noteDrafts[b._id]) && (
-                            <div id={`note-editor-${b._id}`} className="mt-2 flex flex-col gap-2">
-                              <label className="text-[11px] font-bold uppercase tracking-wide text-[var(--muted)]" htmlFor={`note-${b._id}`}>
-                                Nota privada
-                              </label>
-                              <div className="flex flex-col gap-2 sm:flex-row">
-                                <textarea
-                                  id={`note-${b._id}`}
-                                  className="input min-h-16 resize-y text-[13px]"
-                                  maxLength={500}
-                                  value={noteDrafts[b._id] ?? ""}
-                                  onChange={(event) => setNoteDrafts((current) => ({ ...current, [b._id]: event.target.value }))}
-                                  placeholder="Preferencias o información interna"
-                                />
-                                <SmallBtn
-                                  cls="shrink-0 bg-[var(--card-2)] text-[var(--muted)] border-[var(--border)] sm:self-end"
-                                  onClick={() => saveNote(b._id)}
-                                  disabled={savingNoteId === b._id}
-                                >
-                                  {savingNoteId === b._id ? "Guardando…" : "Guardar nota"}
-                                </SmallBtn>
+                            <path d="m6 9 6 6 6-6" />
+                          </svg>
+                        </button>
+
+                        {expanded && (
+                          <div id={`booking-details-${b._id}`} className="border-t border-[var(--border)] px-3.5 pb-3.5 pt-3 sm:px-4 sm:pb-4">
+                            <div className="grid gap-2 sm:grid-cols-3">
+                              <div className="flex min-w-0 items-start gap-2.5 rounded-xl border border-[var(--border)] bg-[var(--card)] p-3">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="mt-0.5 shrink-0 text-accent" aria-hidden="true">
+                                  <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 5.18 2 2 0 0 1 4.11 3h3a2 2 0 0 1 2 1.72c.12.9.33 1.78.62 2.63a2 2 0 0 1-.45 2.11L8 10.73a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.85.29 1.73.5 2.63.62A2 2 0 0 1 22 16.92Z" />
+                                </svg>
+                                <span className="min-w-0">
+                                  <span className="block text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--muted)]">Teléfono</span>
+                                  {phoneHref ? <a href={phoneHref} className="mt-1 block truncate text-sm font-bold hover:text-accent">{b.phone}</a> : <span className="mt-1 block text-sm font-semibold text-[var(--muted)]">Sin número</span>}
+                                </span>
+                              </div>
+                              <div className="flex min-w-0 items-start gap-2.5 rounded-xl border border-[var(--border)] bg-[var(--card)] p-3">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="mt-0.5 shrink-0 text-accent" aria-hidden="true">
+                                  <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
+                                </svg>
+                                <span>
+                                  <span className="block text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--muted)]">Duración</span>
+                                  <span className="mt-1 block text-sm font-bold">{b.duration} minutos</span>
+                                </span>
+                              </div>
+                              <div className="flex min-w-0 items-start gap-2.5 rounded-xl border border-[var(--border)] bg-[var(--card)] p-3">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="mt-0.5 shrink-0 text-accent" aria-hidden="true">
+                                  <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
+                                </svg>
+                                <span>
+                                  <span className="block text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--muted)]">Importe</span>
+                                  <span className="mt-1 block text-sm font-extrabold text-accent">{formatMoney(Number(b.price || 0))}</span>
+                                  {b.status === "done" && <span className="mt-0.5 block text-[11px] font-bold text-emerald-400">Cobrado</span>}
+                                </span>
                               </div>
                             </div>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-2 sm:flex-col sm:items-end sm:gap-1.5">
-                        {b.status !== "cancelled" && b.status !== "done" && (
-                          <>
-                            {b.status !== "done" && (
-                              <SmallBtn
-                                cls="flex-1 sm:flex-none bg-blue-500/12 text-blue-400 border-blue-500/40"
-                                onClick={() => changeStatus(b._id, "done")}
-                              >
-                                Completado
-                              </SmallBtn>
-                            )}
-                          </>
+
+                            <div className="mt-2.5 rounded-xl border border-dashed border-[var(--border)] bg-[var(--card)] p-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--muted)]">Nota privada</p>
+                                  {hasNote && !openNotes[b._id] && <p className="mt-1 truncate text-sm text-[var(--text)]">{noteDrafts[b._id]}</p>}
+                                </div>
+                                <button
+                                  type="button"
+                                  aria-expanded={Boolean(openNotes[b._id])}
+                                  aria-controls={`note-editor-${b._id}`}
+                                  onClick={() => setOpenNotes((current) => ({ ...current, [b._id]: !current[b._id] }))}
+                                  className="inline-flex min-h-9 shrink-0 items-center gap-2 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-[12px] font-bold text-[var(--muted)] transition hover:border-accent hover:text-accent"
+                                >
+                                  {hasNote ? "Editar nota" : "Agregar nota"}
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={openNotes[b._id] ? "rotate-180 transition-transform" : "transition-transform"} aria-hidden="true">
+                                    <path d="m6 9 6 6 6-6" />
+                                  </svg>
+                                </button>
+                              </div>
+                              {openNotes[b._id] && (
+                                <div id={`note-editor-${b._id}`} className="mt-2 flex flex-col gap-2">
+                                  <label className="sr-only" htmlFor={`note-${b._id}`}>Nota privada</label>
+                                  <div className="flex flex-col gap-2 sm:flex-row">
+                                    <textarea
+                                      id={`note-${b._id}`}
+                                      className="input min-h-16 resize-y text-[13px]"
+                                      maxLength={500}
+                                      value={noteDrafts[b._id] ?? ""}
+                                      onChange={(event) => setNoteDrafts((current) => ({ ...current, [b._id]: event.target.value }))}
+                                      placeholder="Preferencias o información interna"
+                                    />
+                                    <SmallBtn
+                                      cls="shrink-0 bg-[var(--card-2)] text-[var(--muted)] border-[var(--border)] sm:self-end"
+                                      onClick={() => saveNote(b._id)}
+                                      disabled={savingNoteId === b._id}
+                                    >
+                                      {savingNoteId === b._id ? "Guardando…" : "Guardar nota"}
+                                    </SmallBtn>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="mt-3 flex flex-wrap gap-2 border-t border-[var(--border)] pt-3">
+                              {b.status !== "cancelled" && b.status !== "done" && (
+                                <>
+                                  <SmallBtn
+                                    cls="flex-1 bg-blue-500/12 text-blue-400 border-blue-500/40 sm:flex-none"
+                                    onClick={() => changeStatus(b._id, "done")}
+                                  >
+                                    <span className="inline-flex items-center gap-1.5">
+                                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg>
+                                      Completado
+                                    </span>
+                                  </SmallBtn>
+                                  <SmallBtn
+                                    cls="flex-1 bg-[var(--card-2)] text-[var(--muted)] border-[var(--border)] sm:flex-none"
+                                    onClick={() => changeStatus(b._id, "cancelled")}
+                                  >
+                                    <span className="inline-flex items-center gap-1.5">
+                                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+                                      Cancelar
+                                    </span>
+                                  </SmallBtn>
+                                  <SmallBtn
+                                    cls="flex-1 bg-red-500/12 text-[var(--red)] border-red-500/40 sm:flex-none"
+                                    onClick={() => removeBooking(b)}
+                                  >
+                                    <span className="inline-flex items-center gap-1.5">
+                                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></svg>
+                                      Anular reserva
+                                    </span>
+                                  </SmallBtn>
+                                </>
+                              )}
+                            </div>
+                          </div>
                         )}
-                        {b.status !== "cancelled" && b.status !== "done" && (
-                          <SmallBtn
-                            cls="flex-1 sm:flex-none bg-[var(--card-2)] text-[var(--muted)] border-[var(--border)]"
-                            onClick={() => changeStatus(b._id, "cancelled")}
-                          >
-                            Cancelar
-                          </SmallBtn>
-                        )}
-                        <SmallBtn
-                          cls="flex-1 sm:flex-none bg-red-500/12 text-[var(--red)] border-red-500/40"
-                          onClick={() => removeBooking(b)}
-                        >
-                          Eliminar
-                        </SmallBtn>
-                      </div>
-                    </li>
-                  ))}
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
               {pageCount > 1 && (

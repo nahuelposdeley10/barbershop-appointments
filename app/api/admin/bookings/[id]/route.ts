@@ -100,8 +100,15 @@ export async function DELETE(req: NextRequest, { params }: Ctx) {
       return Response.json({ error: "ID inválido" }, { status: 400 });
     }
     await connectDB();
+    const current = await Booking.findOne({ _id: id, ...tenantFilter(context.tenantId) }).select("status").lean();
+    if (!current) {
+      return Response.json({ error: "Turno no encontrado" }, { status: 404 });
+    }
+    if (current.status === "done") {
+      return Response.json({ error: "Un turno completado no se puede anular" }, { status: 409 });
+    }
     const booking = await Booking.findOneAndUpdate(
-      { _id: id, ...tenantFilter(context.tenantId) },
+      { _id: id, status: "confirmed", ...tenantFilter(context.tenantId) },
       {
         $set: {
           status: "cancelled",
@@ -113,7 +120,7 @@ export async function DELETE(req: NextRequest, { params }: Ctx) {
       { new: true }
     );
     if (!booking) {
-      return Response.json({ error: "Turno no encontrado" }, { status: 404 });
+      return Response.json({ error: "El turno ya no está activo" }, { status: 409 });
     }
     void recordAuditLog({
       tenantId: context.tenantId,
