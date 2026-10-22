@@ -4,7 +4,7 @@ const bookingSchema = new mongoose.Schema(
   {
     tenantId: { type: mongoose.Schema.Types.ObjectId, ref: "Tenant", index: true },
     name: { type: String, required: true, trim: true },
-    phone: { type: String, required: true, trim: true },
+    phone: { type: String, default: "", trim: true },
     service: { type: String, required: true },
     duration: { type: Number, required: true },
     price: { type: Number, default: 0 },

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  adminCreateBooking,
   adminDeleteBooking,
   adminGetBookings,
   adminGetRevenue,
@@ -136,6 +137,16 @@ export default function AdminPage({
   const [date, setDate] = useState(today);
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
+  const [manualBookingOpen, setManualBookingOpen] = useState(false);
+  const [manualBookingForm, setManualBookingForm] = useState({
+    name: "",
+    phone: "",
+    service: "",
+    date: today,
+    time: "",
+  });
+  const [savingManualBooking, setSavingManualBooking] = useState(false);
+  const [agendaMessage, setAgendaMessage] = useState("");
   const [page, setPage] = useState(1);
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
   const [savingNoteId, setSavingNoteId] = useState<string | null>(null);
@@ -180,6 +191,20 @@ export default function AdminPage({
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [tenantModalOpen, creatingTenant]);
+
+  useEffect(() => {
+    if (!manualBookingOpen) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !savingManualBooking) setManualBookingOpen(false);
+    }
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [manualBookingOpen, savingManualBooking]);
 
   useEffect(() => {
     if (role !== "owner") return;
@@ -344,6 +369,43 @@ export default function AdminPage({
   function selectAgendaDate(nextDate: string) {
     setLoading(true);
     setDate(nextDate);
+  }
+
+  function openManualBooking() {
+    setError("");
+    setAgendaMessage("");
+    setManualBookingForm({
+      name: "",
+      phone: "",
+      service: settings?.services[0]?.name || "",
+      date,
+      time: "",
+    });
+    setManualBookingOpen(true);
+  }
+
+  async function createManualBooking(event: React.FormEvent) {
+    event.preventDefault();
+    setSavingManualBooking(true);
+    setError("");
+    setAgendaMessage("");
+    try {
+      await adminCreateBooking(token, manualBookingForm);
+      setDate(manualBookingForm.date);
+      const list = await adminGetBookings(token, {
+        date: manualBookingForm.date,
+        status: status || undefined,
+      });
+      setBookings(list);
+      setNoteDrafts(Object.fromEntries(list.map((booking) => [booking._id, booking.adminNote || ""])));
+      setRevenueRefresh((value) => value + 1);
+      setAgendaMessage("Servicio registrado como completado y sumado al resumen.");
+      setManualBookingOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No pudimos registrar el servicio");
+    } finally {
+      setSavingManualBooking(false);
+    }
   }
 
   function selectStatus(nextStatus: string) {
@@ -869,7 +931,20 @@ export default function AdminPage({
                   type="search"
                 />
               </Field>
+              <button
+                type="button"
+                onClick={openManualBooking}
+                className="min-h-12 w-full shrink-0 rounded-xl bg-accent px-4 py-3 text-sm font-bold text-zinc-950 transition hover:bg-accent-hover sm:w-auto"
+              >
+                + Registrar servicio
+              </button>
             </section>
+
+            {agendaMessage && (
+              <p role="status" className="rounded-xl border border-emerald-400/30 bg-emerald-400/[0.08] px-3.5 py-2.5 text-sm font-semibold text-emerald-400">
+                {agendaMessage}
+              </p>
+            )}
 
             <div className="flex flex-wrap gap-2 pb-1 sm:pb-0">
               <Stat
@@ -1032,6 +1107,116 @@ export default function AdminPage({
               )}
             </section>
           </>
+        )}
+
+        {manualBookingOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/65 p-0 sm:items-center sm:p-6"
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget && !savingManualBooking) setManualBookingOpen(false);
+            }}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="manual-booking-title"
+              className="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-2xl sm:max-w-2xl sm:rounded-3xl sm:p-6"
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-accent">Carga manual</p>
+                  <h2 id="manual-booking-title" className="mt-2 text-xl font-bold">Registrar servicio realizado</h2>
+                  <p className="mt-2 text-sm text-[var(--muted)]">
+                    Usalo cuando alguien vino sin reservar. Se guardará como completado y sumará al resumen.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Cerrar ventana"
+                  disabled={savingManualBooking}
+                  onClick={() => setManualBookingOpen(false)}
+                  className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-[var(--border)] text-xl text-[var(--muted)] transition hover:border-accent hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  ×
+                </button>
+              </div>
+
+              <form onSubmit={createManualBooking} className="mt-6 grid gap-3 sm:grid-cols-2">
+                <Field label="Servicio">
+                  <select
+                    className="input"
+                    required
+                    value={manualBookingForm.service}
+                    onChange={(event) => setManualBookingForm((current) => ({ ...current, service: event.target.value }))}
+                  >
+                    <option value="">Elegí un servicio</option>
+                    {(settings?.services || []).map((service) => (
+                      <option key={service.name} value={service.name}>
+                        {service.name} · {formatMoney(service.price)}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Nombre del cliente">
+                  <input
+                    className="input"
+                    required
+                    minLength={2}
+                    maxLength={80}
+                    value={manualBookingForm.name}
+                    onChange={(event) => setManualBookingForm((current) => ({ ...current, name: event.target.value }))}
+                    placeholder="Nombre y apellido"
+                  />
+                </Field>
+                <Field label="Fecha">
+                  <input
+                    type="date"
+                    className="input"
+                    required
+                    value={manualBookingForm.date}
+                    onChange={(event) => setManualBookingForm((current) => ({ ...current, date: event.target.value }))}
+                  />
+                </Field>
+                <Field label="Horario">
+                  <input
+                    type="time"
+                    className="input"
+                    required
+                    value={manualBookingForm.time}
+                    onChange={(event) => setManualBookingForm((current) => ({ ...current, time: event.target.value }))}
+                  />
+                </Field>
+                <Field label="Teléfono (opcional)" className="sm:col-span-2">
+                  <input
+                    className="input"
+                    inputMode="tel"
+                    value={manualBookingForm.phone}
+                    onChange={(event) => setManualBookingForm((current) => ({ ...current, phone: event.target.value }))}
+                    placeholder="Se puede dejar vacío"
+                  />
+                </Field>
+                <div className="mt-2 flex flex-col-reverse gap-3 sm:col-span-2 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    disabled={savingManualBooking}
+                    onClick={() => setManualBookingOpen(false)}
+                    className="min-h-12 rounded-xl border border-[var(--border)] px-5 py-3 font-bold text-[var(--muted)] transition hover:border-[var(--text)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingManualBooking || !settings?.services.length}
+                    className="min-h-12 rounded-xl bg-accent px-5 py-3 font-bold text-zinc-950 transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {savingManualBooking ? "Guardando…" : "Registrar como completado"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
         )}
 
         {tab === "config" && draft && (

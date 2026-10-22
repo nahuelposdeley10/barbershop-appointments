@@ -230,6 +230,17 @@ export function adminGetBookings(
   return request(`/admin/bookings${qs ? `?${qs}` : ""}`);
 }
 
+export function adminCreateBooking(
+  token: string,
+  booking: { name: string; phone?: string; service: string; date: string; time: string }
+): Promise<AdminBooking> {
+  void token;
+  return request("/admin/bookings", {
+    method: "POST",
+    body: JSON.stringify(booking),
+  });
+}
+
 export function adminGetRevenue(token: string): Promise<AdminRevenue> {
   void token;
   return request("/admin/revenue");
