@@ -34,6 +34,7 @@ export type BookingConfirmation = {
   date: string;
   time: string;
   status: string;
+  paymentStatus?: "pending" | "paid" | "refunded";
   manageToken?: string;
   address?: string;
 };
@@ -54,6 +55,7 @@ export type AdminRevenue = {
   today: RevenuePeriod;
   week: RevenuePeriod;
   month: RevenuePeriod;
+  global: RevenuePeriod;
 };
 
 export type Settings = {
@@ -241,15 +243,23 @@ export function adminCreateBooking(
   });
 }
 
-export function adminGetRevenue(token: string): Promise<AdminRevenue> {
+export function adminGetRevenue(
+  token: string,
+  options: { dayOffset?: number; weekOffset?: number; monthOffset?: number } = {}
+): Promise<AdminRevenue> {
   void token;
-  return request("/admin/revenue");
+  const query = new URLSearchParams();
+  if (options.dayOffset) query.set("dayOffset", String(options.dayOffset));
+  if (options.weekOffset) query.set("weekOffset", String(options.weekOffset));
+  if (options.monthOffset) query.set("monthOffset", String(options.monthOffset));
+  const qs = query.toString();
+  return request(`/admin/revenue${qs ? `?${qs}` : ""}`);
 }
 
 export function adminUpdateBooking(
   token: string,
   id: string,
-  changes: { status?: string; adminNote?: string } | string
+  changes: { status?: string; paymentStatus?: "pending" | "paid" | "refunded"; adminNote?: string } | string
 ): Promise<AdminBooking> {
   const body = typeof changes === "string" ? { status: changes } : changes;
   return request(`/admin/bookings/${id}`, {

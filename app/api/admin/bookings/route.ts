@@ -1,9 +1,19 @@
 import { NextRequest } from "next/server";
 import { connectDB } from "@/lib/db";
-import { getSettings, isValidTime, normalizeDate } from "@/lib/booking-logic";
+import {
+  getSettings,
+  isValidTime,
+  normalizeDate,
+  localDateStr,
+  localMinutes,
+  toMinutes,
+  weekdayForDate,
+  overlaps,
+} from "@/lib/booking-logic";
 import { getAdminContext } from "@/lib/auth";
 import { Booking } from "@/lib/models/Booking";
 import { tenantFilter } from "@/lib/tenancy";
+import { recordAuditLog } from "@/lib/audit-log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,6 +67,38 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: "Elegí un servicio válido" }, { status: 400 });
     }
 
+    const today = localDateStr(new Date());
+    if (cleanDate > today) {
+      return Response.json({ error: "Un turno completado no puede quedar en una fecha futura" }, { status: 400 });
+    }
+    const dayCfg = settings.days.find((day) => day.day === weekdayForDate(cleanDate));
+    const start = toMinutes(cleanTime);
+    const end = start + service.duration;
+    if (cleanDate === today) {
+      if (!dayCfg?.enabled || settings.unavailableDates.includes(cleanDate)) {
+        return Response.json({ error: "Ese día no figura como disponible" }, { status: 400 });
+      }
+      if (start > localMinutes(new Date())) {
+        return Response.json({ error: "Un turno completado debe tener una hora ya realizada" }, { status: 400 });
+      }
+    }
+    if (dayCfg?.enabled && (start < toMinutes(dayCfg.open) || end > toMinutes(dayCfg.close))) {
+      return Response.json({ error: "El turno queda fuera del horario de atención" }, { status: 400 });
+    }
+    if (cleanDate === today) {
+      const openings = await Booking.find({
+        ...tenantFilter(context.tenantId),
+        date: cleanDate,
+        status: { $ne: "cancelled" },
+      }).select("time duration").lean();
+      const occupied = openings.filter((booking) =>
+        overlaps(start, service.duration, toMinutes(booking.time), booking.duration)
+      ).length;
+      if (occupied >= Math.max(1, settings.cantidadBarberos || 1)) {
+        return Response.json({ error: "Ese horario ya está completo" }, { status: 409 });
+      }
+    }
+
     const booking = await Booking.create({
       name: cleanName,
       phone: cleanPhone,
@@ -66,7 +108,16 @@ export async function POST(req: NextRequest) {
       date: cleanDate,
       time: cleanTime,
       status: "done",
+      paymentStatus: "paid",
       ...tenantFilter(context.tenantId),
+    });
+    void recordAuditLog({
+      tenantId: context.tenantId,
+      actorId: context.userId,
+      action: "booking.manual_created",
+      entityType: "booking",
+      entityId: String(booking._id),
+      metadata: { date: cleanDate, time: cleanTime, service: service.name },
     });
 
     return Response.json(booking, { status: 201 });

@@ -17,7 +17,7 @@ import { BookingLock } from "@/lib/models/BookingLock";
 import { rateLimited } from "@/lib/rate-limit";
 import { createBookingManageToken } from "@/lib/booking-access";
 import { logRequestError, requestId, withRequestId } from "@/lib/request-id";
-import { getTenantForRequest, tenantFilter } from "@/lib/tenancy";
+import { resolveTenantForRequest, tenantFilter } from "@/lib/tenancy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -70,7 +70,10 @@ export async function POST(req: NextRequest) {
     }
 
     await connectDB();
-    const tenant = await getTenantForRequest(req);
+    const { tenant, explicit } = await resolveTenantForRequest(req);
+    if (explicit && !tenant) {
+      return Response.json({ error: "Barbería no encontrada" }, { status: 404 });
+    }
     const tenantId = tenant ? String(tenant._id) : undefined;
     const settings = await getSettings(tenantId);
     const serviceCfg = settings.services.find((s) => s.name === cleanService);
@@ -153,6 +156,7 @@ export async function POST(req: NextRequest) {
             date: d,
             time: cleanTime,
             status: "confirmed",
+            paymentStatus: "pending",
             ...(tenantId ? { tenantId } : {}),
             manageTokenHash: manageToken.hash,
           }],

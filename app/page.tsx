@@ -151,6 +151,9 @@ function fallbackSiteData(): SiteData {
 async function getSiteDataFromDatabase(tenantSlug?: string): Promise<SiteData> {
   await connectDB();
   const tenant = await getTenantForSlugOrDefault(tenantSlug);
+  if (tenantSlug && !tenant) {
+    throw new Error("Tenant not found");
+  }
   const s = await getSettings(tenant ? String(tenant._id) : undefined);
     const servicios: SiteService[] = (s.services || []).map(
       (sv: { name: string; price: number; duration: number; img?: string }) => ({
@@ -222,6 +225,7 @@ const getSiteData = cache(async (tenantSlug = ""): Promise<SiteData> => {
       }),
     ]);
   } catch (error) {
+    if (tenantSlug) throw error;
     console.error("Site data unavailable; rendering fallback content", error);
     return fallbackSiteData();
   }
@@ -930,7 +934,7 @@ export default async function Home({ searchParams }: HomeProps = {}) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
-      <Navbar nombre={data.nombre} logo={data.imgLogo} />
+      <Navbar nombre={data.nombre} logo={data.imgLogo} tenantSlug={tenantParam || null} />
       <main className="flex-1">
         <Hero data={data} />
         <SectionDivider />

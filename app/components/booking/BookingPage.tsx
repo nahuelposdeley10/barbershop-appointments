@@ -14,6 +14,7 @@ import {
 import { BarberPole, ServiceThumb } from "./BarberIcons";
 import ScheduleCalendar from "./ScheduleCalendar";
 import Navbar from "../Navbar";
+import ConfirmDialog from "../ConfirmDialog";
 
 const DAY_NAMES = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const MONTH_NAMES = [
@@ -248,6 +249,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
   const [submitting, setSubmitting] = useState(false);
   const [bookings, setBookings] = useState<BookingConfirmation[]>([]);
   const [cancellingToken, setCancellingToken] = useState<string | null>(null);
+  const [bookingToCancel, setBookingToCancel] = useState<BookingConfirmation | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [bookingNotice, setBookingNotice] = useState("");
@@ -411,13 +413,20 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
 
   async function handleCancelBooking(token: string) {
     if (cancellingToken) return;
-    if (!window.confirm("¿Querés cancelar este turno? Esta acción libera el horario.")) return;
+    const booking = bookings.find((entry) => entry.manageToken === token);
+    if (booking) setBookingToCancel(booking);
+  }
+
+  async function confirmCancelBooking() {
+    if (!bookingToCancel?.manageToken || cancellingToken) return;
+    const token = bookingToCancel.manageToken;
     setCancellingToken(token);
     setCancelError("");
     try {
       await cancelBooking(token);
       setBookings((prev) => prev.filter((entry) => entry.manageToken !== token));
       setBookingNotice("El turno fue cancelado y el horario ya quedó liberado.");
+      setBookingToCancel(null);
     } catch (err) {
       setCancelError(err instanceof Error ? err.message : "No pudimos cancelar el turno");
     } finally {
@@ -437,7 +446,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
 
   return (
     <div className="booking-bg">
-      <Navbar nombre={barberName} logo={logo} />
+      <Navbar nombre={barberName} logo={logo} tenantSlug={tenantSlug || null} />
       <div className="flex flex-col gap-4 sm:gap-5 max-w-[720px] w-full mx-auto pt-20 sm:pt-24 px-3.5 sm:px-5 pb-12 sm:pb-16">
 
         {bookingNotice && (
@@ -531,6 +540,17 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
             </ul>
           </section>
         )}
+
+        <ConfirmDialog
+          open={Boolean(bookingToCancel)}
+          title="¿Cancelar este turno?"
+          description="El horario quedará libre para otra persona. Esta acción no se puede deshacer."
+          detail={bookingToCancel ? `${bookingToCancel.service} · ${formatDate(bookingToCancel.date)} · ${bookingToCancel.time} h` : undefined}
+          confirmLabel="Cancelar turno"
+          loading={Boolean(cancellingToken)}
+          onConfirm={confirmCancelBooking}
+          onCancel={() => setBookingToCancel(null)}
+        />
 
         <BookingProgress step={step} />
 

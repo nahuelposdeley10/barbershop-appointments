@@ -37,6 +37,11 @@ export function tenantFilter(tenantId?: string | null): Record<string, string> {
   return tenantId ? { tenantId } : {};
 }
 
+export function hasExplicitTenantSelector(req: Request): boolean {
+  const url = new URL(req.url);
+  return url.searchParams.has("tenant") || Boolean(req.headers.get("x-tenant-slug"));
+}
+
 export function tenantQueryFromRequest(req: Request): string {
   const url = new URL(req.url);
   return normalizeTenantSlug(url.searchParams.get("tenant") || req.headers.get("x-tenant-slug") || "");
@@ -44,4 +49,15 @@ export function tenantQueryFromRequest(req: Request): string {
 
 export async function getTenantForRequest(req: Request): Promise<TenantDoc | null> {
   return getTenantForSlugOrDefault(tenantQueryFromRequest(req));
+}
+
+export async function resolveTenantForRequest(req: Request): Promise<{
+  tenant: TenantDoc | null;
+  explicit: boolean;
+}> {
+  const explicit = hasExplicitTenantSelector(req);
+  return {
+    tenant: await getTenantForRequest(req),
+    explicit,
+  };
 }

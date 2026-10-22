@@ -14,7 +14,7 @@ import {
 import { Booking } from "@/lib/models/Booking";
 import { rateLimited } from "@/lib/rate-limit";
 import { logRequestError, requestId, withRequestId } from "@/lib/request-id";
-import { getTenantForRequest, tenantFilter } from "@/lib/tenancy";
+import { resolveTenantForRequest, tenantFilter } from "@/lib/tenancy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,7 +26,10 @@ export async function GET(req: NextRequest) {
       return Response.json({ error: "Demasiadas consultas. Intentá nuevamente." }, { status: 429 });
     }
     await connectDB();
-    const tenant = await getTenantForRequest(req);
+    const { tenant, explicit } = await resolveTenantForRequest(req);
+    if (explicit && !tenant) {
+      return Response.json({ error: "Barbería no encontrada" }, { status: 404 });
+    }
     const tenantId = tenant ? String(tenant._id) : undefined;
     const search = req.nextUrl.searchParams;
     const from = normalizeDate(search.get("from") || "");

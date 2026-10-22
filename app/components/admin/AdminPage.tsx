@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   adminCreateBooking,
   adminDeleteBooking,
@@ -19,6 +19,7 @@ import {
 } from "@/lib/client-api";
 import { BarberPole, ServiceIcon } from "../booking/BarberIcons";
 import Navbar, { type AdminPanelTab } from "../Navbar";
+import ConfirmDialog from "../ConfirmDialog";
 
 const DAY_NAMES = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const MONTH_NAMES = [
@@ -52,6 +53,12 @@ function localDateStr(d: Date) {
   return `${y}-${month}-${day}`;
 }
 
+function shiftDate(dateStr: string, amount: number) {
+  const date = new Date(`${dateStr}T12:00:00`);
+  date.setDate(date.getDate() + amount);
+  return localDateStr(date);
+}
+
 function toMinutes(time: string) {
   const [hours, minutes] = time.split(":").map(Number);
   return hours * 60 + minutes;
@@ -72,25 +79,153 @@ function formatMoney(value: number) {
   return moneyFormatter.format(value);
 }
 
-function RevenueCard({ label, period }: { label: string; period: AdminRevenue["today"] }) {
+function formatRevenueDate(date: string) {
+  if (!date) return "Desde el inicio";
+  const value = new Date(`${date}T00:00:00`);
+  return value.toLocaleDateString("es-AR", { day: "numeric", month: "short" });
+}
+
+function revenuePeriodLabel(unit: "día" | "semana" | "mes", offset: number) {
+  if (offset === 0) {
+    if (unit === "día") return "Día actual";
+    return unit === "semana" ? "Período actual" : "Mes actual";
+  }
+  return `Hace ${offset} ${unit}${offset === 1 ? "" : unit === "semana" ? "s" : unit === "mes" ? "es" : "s"}`;
+}
+
+type RevenueIconName = "calendar" | "week" | "month" | "coins";
+type RevenueTone = "blue" | "accent" | "amber" | "green";
+
+const revenueToneClasses: Record<RevenueTone, { border: string; icon: string; line: string }> = {
+  blue: {
+    border: "border-blue-400/25",
+    icon: "bg-blue-400/10 text-blue-300",
+    line: "from-blue-400/70",
+  },
+  accent: {
+    border: "border-accent/30",
+    icon: "bg-accent/10 text-accent",
+    line: "from-accent/80",
+  },
+  amber: {
+    border: "border-amber-300/25",
+    icon: "bg-amber-300/10 text-amber-200",
+    line: "from-amber-300/70",
+  },
+  green: {
+    border: "border-emerald-400/25",
+    icon: "bg-emerald-400/10 text-emerald-300",
+    line: "from-emerald-400/70",
+  },
+};
+
+function RevenueIcon({ name }: { name: RevenueIconName }) {
+  const paths = {
+    calendar: <><rect x="3.5" y="5" width="17" height="16" rx="2.5" /><path d="M7.5 3.5v4M16.5 3.5v4M3.5 10h17M8 14h.01M12 14h.01M16 14h.01M8 17.5h.01M12 17.5h.01" /></>,
+    week: <><path d="M4 19.5V10M9.3 19.5V5M14.7 19.5v-7M20 19.5V3.5" /><path d="M3 19.5h18" /></>,
+    month: <><path d="M4 19.5V10M9.3 19.5V5M14.7 19.5v-7M20 19.5V3.5" /><path d="m3 8 5-3 5 4 7-5" /></>,
+    coins: <><ellipse cx="12" cy="6" rx="7.5" ry="3" /><path d="M4.5 6v5c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3V6M4.5 11v5c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-5" /></>,
+  }[name];
+
   return (
-    <article className="rounded-2xl border border-[var(--border)] bg-[var(--bg-soft)] p-4 sm:p-5">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-bold text-[var(--muted)]">{label}</p>
-        <span className="rounded-full bg-accent/10 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-accent">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {paths}
+    </svg>
+  );
+}
+
+function RevenueCard({
+  label,
+  period,
+  periodCaption,
+  icon,
+  tone = "accent",
+  onPrevious,
+  onNext,
+  previousDisabled = false,
+  nextDisabled = false,
+}: {
+  label: string;
+  period: AdminRevenue["today"];
+  periodCaption?: string;
+  icon: RevenueIconName;
+  tone?: RevenueTone;
+  onPrevious?: () => void;
+  onNext?: () => void;
+  previousDisabled?: boolean;
+  nextDisabled?: boolean;
+}) {
+  const navigable = Boolean(onPrevious && onNext);
+  const colors = revenueToneClasses[tone];
+  return (
+    <article className={`group relative overflow-hidden rounded-2xl border bg-[var(--bg-soft)] p-4 transition hover:-translate-y-0.5 hover:shadow-xl hover:shadow-black/15 sm:p-5 ${colors.border}`}>
+      <div className={`absolute inset-x-0 top-0 h-px bg-gradient-to-r ${colors.line} to-transparent`} aria-hidden="true" />
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${colors.icon}`}>
+            <RevenueIcon name={icon} />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-[var(--text)]">{label}</p>
+            <p className="mt-1 truncate text-[11px] font-semibold text-[var(--muted)]">
+              {periodCaption || `${formatRevenueDate(period.from)} – ${formatRevenueDate(period.to)}`}
+            </p>
+          </div>
+        </div>
+        {navigable ? (
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={onPrevious}
+              disabled={previousDisabled}
+              aria-label={`Ver ${label.toLowerCase()} anterior`}
+              className="grid h-8 w-8 place-items-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <path d="m14.5 18-6-6 6-6" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={onNext}
+              disabled={nextDisabled}
+              aria-label={`Ver ${label.toLowerCase()} siguiente`}
+              className="grid h-8 w-8 place-items-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <path d="m9.5 18 6-6-6-6" />
+              </svg>
+            </button>
+          </div>
+        ) : null}
+      </div>
+      <div className="mt-5 flex items-end justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--muted)]">Total estimado</p>
+          <p className="mt-1 text-[26px] font-black tracking-tight text-[var(--text)]">{formatMoney(period.total)}</p>
+        </div>
+        <span className="mb-1 shrink-0 rounded-full bg-[var(--card-2)] px-2.5 py-1 text-[11px] font-bold text-[var(--muted)]">
           {period.appointmentCount} {period.appointmentCount === 1 ? "turno" : "turnos"}
         </span>
       </div>
-      <p className="mt-3 text-2xl font-extrabold tracking-tight text-[var(--text)]">{formatMoney(period.total)}</p>
-      <p className="mt-1 text-xs text-[var(--muted)]">Total estimado</p>
       <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[var(--border)] pt-3 text-xs">
-        <div>
-          <p className="text-[var(--muted)]">Cobrado</p>
-          <p className="mt-1 font-bold text-emerald-400">{formatMoney(period.collected)}</p>
+        <div className="rounded-xl bg-emerald-400/[0.06] p-2.5">
+          <p className="flex items-center gap-1.5 text-[var(--muted)]">
+            <span className="grid h-4 w-4 place-items-center rounded-full bg-emerald-400/15 text-emerald-300" aria-hidden="true">
+              <svg width="10" height="10" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.704 5.29a1 1 0 0 1 .006 1.414l-7.25 7.333a1 1 0 0 1-1.42.006L3.29 9.293a1 1 0 0 1 1.42-1.406l4.04 4.081 6.54-6.61a1 1 0 0 1 1.414-.068Z" clipRule="evenodd" /></svg>
+            </span>
+            Cobrado
+          </p>
+          <p className="mt-1 font-bold text-emerald-300">{formatMoney(period.collected)}</p>
         </div>
-        <div>
-          <p className="text-[var(--muted)]">Pendiente</p>
-          <p className="mt-1 font-bold text-amber-300">{formatMoney(period.pending)}</p>
+        <div className="rounded-xl bg-amber-300/[0.06] p-2.5">
+          <p className="flex items-center gap-1.5 text-[var(--muted)]">
+            <span className="grid h-4 w-4 place-items-center rounded-full bg-amber-300/15 text-amber-200" aria-hidden="true">
+              <svg width="10" height="10" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm.75-11.5a.75.75 0 0 0-1.5 0v3.75c0 .2.08.39.22.53l2.25 2.25a.75.75 0 0 0 1.06-1.06l-2.03-2.03V6.5Z" clipRule="evenodd" /></svg>
+            </span>
+            Pendiente
+          </p>
+          <p className="mt-1 font-bold text-amber-200">{formatMoney(period.pending)}</p>
         </div>
       </div>
     </article>
@@ -135,7 +270,10 @@ export default function AdminPage({
   const [adminPassword, setAdminPassword] = useState("");
   const [bookings, setBookings] = useState<AdminBooking[]>([]);
   const [date, setDate] = useState(today);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [status, setStatus] = useState("");
+  const [statusMenuOpen, setStatusMenuOpen] = useState(false);
+  const statusMenuRef = useRef<HTMLDivElement>(null);
   const [search, setSearch] = useState("");
   const [manualBookingOpen, setManualBookingOpen] = useState(false);
   const [manualBookingForm, setManualBookingForm] = useState({
@@ -149,11 +287,15 @@ export default function AdminPage({
   const [agendaMessage, setAgendaMessage] = useState("");
   const [page, setPage] = useState(1);
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
+  const [openNotes, setOpenNotes] = useState<Record<string, boolean>>({});
   const [savingNoteId, setSavingNoteId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [revenue, setRevenue] = useState<AdminRevenue | null>(null);
   const [revenueLoading, setRevenueLoading] = useState(true);
   const [revenueRefresh, setRevenueRefresh] = useState(0);
+  const [dayRevenueOffset, setDayRevenueOffset] = useState(0);
+  const [weekRevenueOffset, setWeekRevenueOffset] = useState(0);
+  const [monthRevenueOffset, setMonthRevenueOffset] = useState(0);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [newBlockDate, setNewBlockDate] = useState("");
@@ -173,6 +315,8 @@ export default function AdminPage({
   const [copiedTenantId, setCopiedTenantId] = useState<string | null>(null);
   const [enteringTenantId, setEnteringTenantId] = useState<string | null>(null);
   const [leavingTenant, setLeavingTenant] = useState(false);
+  const [bookingToDelete, setBookingToDelete] = useState<{ id: string; name: string; service: string; date: string; time: string } | null>(null);
+  const [deletingBooking, setDeletingBooking] = useState(false);
 
   useEffect(() => {
     window.sessionStorage.setItem("adminTab", tab);
@@ -223,7 +367,11 @@ export default function AdminPage({
   useEffect(() => {
     if (role !== "owner") return;
     let cancelled = false;
-    adminGetRevenue(token)
+    adminGetRevenue(token, {
+      dayOffset: dayRevenueOffset,
+      weekOffset: weekRevenueOffset,
+      monthOffset: monthRevenueOffset,
+    })
       .then((summary) => {
         if (!cancelled) setRevenue(summary);
       })
@@ -236,7 +384,7 @@ export default function AdminPage({
     return () => {
       cancelled = true;
     };
-  }, [token, role, revenueRefresh]);
+  }, [token, role, revenueRefresh, dayRevenueOffset, weekRevenueOffset, monthRevenueOffset]);
 
   useEffect(() => {
     if (role !== "owner" || tab !== "agenda") return;
@@ -268,10 +416,32 @@ export default function AdminPage({
       .catch((e) => setError(e instanceof Error ? e.message : "No pudimos cargar las barberías"));
   }, [token, role, tab]);
 
+  useEffect(() => {
+    if (!statusMenuOpen) return;
+    function handlePointerDown(event: PointerEvent) {
+      if (!statusMenuRef.current?.contains(event.target as Node)) {
+        setStatusMenuOpen(false);
+      }
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setStatusMenuOpen(false);
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [statusMenuOpen]);
+
   async function changeStatus(id: string, newStatus: string) {
     setError("");
     try {
-      await adminUpdateBooking(token, id, newStatus);
+      await adminUpdateBooking(
+        token,
+        id,
+        newStatus === "done" ? { status: "done", paymentStatus: "paid" } : newStatus
+      );
       const list = await adminGetBookings(token, { date, status: status || undefined });
       setBookings(list);
       setNoteDrafts(Object.fromEntries(list.map((booking) => [booking._id, booking.adminNote || ""])));
@@ -367,8 +537,10 @@ export default function AdminPage({
   }
 
   function selectAgendaDate(nextDate: string) {
+    if (!nextDate) return;
     setLoading(true);
     setDate(nextDate);
+    setDatePickerOpen(false);
   }
 
   function openManualBooking() {
@@ -413,17 +585,31 @@ export default function AdminPage({
     setStatus(nextStatus);
   }
 
-  async function removeBooking(id: string, name: string) {
-    if (!window.confirm(`¿Eliminar el turno de ${name}?`)) return;
+  function removeBooking(booking: AdminBooking) {
+    setBookingToDelete({
+      id: booking._id,
+      name: booking.name,
+      service: booking.service,
+      date: booking.date,
+      time: booking.time,
+    });
+  }
+
+  async function confirmRemoveBooking() {
+    if (!bookingToDelete || deletingBooking) return;
+    setDeletingBooking(true);
     setError("");
     try {
-      await adminDeleteBooking(token, id);
+      await adminDeleteBooking(token, bookingToDelete.id);
       const list = await adminGetBookings(token, { date, status: status || undefined });
       setBookings(list);
       setNoteDrafts(Object.fromEntries(list.map((booking) => [booking._id, booking.adminNote || ""])));
       setRevenueRefresh((value) => value + 1);
+      setBookingToDelete(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error inesperado");
+    } finally {
+      setDeletingBooking(false);
     }
   }
 
@@ -674,6 +860,37 @@ export default function AdminPage({
     done: bookings.filter((b) => b.status === "done").length,
     cancelled: bookings.filter((b) => b.status === "cancelled").length,
   };
+  const statusOptions = [
+    {
+      value: "",
+      label: `Todos (${bookings.length})`,
+      color: "text-[var(--text)]",
+      dot: "bg-[var(--text)]",
+      active: "bg-[var(--text)]/[0.08]",
+    },
+    {
+      value: "confirmed",
+      label: plural(stats.confirmed, "activo"),
+      color: "text-blue-400",
+      dot: "bg-blue-400",
+      active: "bg-blue-400/[0.10]",
+    },
+    {
+      value: "done",
+      label: plural(stats.done, "completado"),
+      color: "text-emerald-400",
+      dot: "bg-emerald-400",
+      active: "bg-emerald-400/[0.10]",
+    },
+    {
+      value: "cancelled",
+      label: plural(stats.cancelled, "cancelado"),
+      color: "text-[var(--muted)]",
+      dot: "bg-[var(--muted)]",
+      active: "bg-[var(--muted)]/[0.10]",
+    },
+  ];
+  const selectedStatus = statusOptions.find((option) => option.value === status) ?? statusOptions[0];
   const visibleBookings = bookings.filter((booking) => {
     const query = search.trim().toLowerCase();
     if (!query) return true;
@@ -883,16 +1100,47 @@ export default function AdminPage({
               <p className="text-xs text-[var(--muted)]">Cancelados no cuentan · completados = cobrado</p>
             </div>
             {revenueLoading ? (
-              <div className="grid gap-3 md:grid-cols-3">
-                {["Hoy", "Esta semana", "Este mes"].map((label) => (
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {["Hoy", "Esta semana", "Este mes", "Dinero global"].map((label) => (
                   <div key={label} className="h-40 animate-pulse rounded-2xl bg-[var(--bg-soft)]" aria-label={`Cargando ${label}`} />
                 ))}
               </div>
             ) : revenue ? (
-              <div className="grid gap-3 md:grid-cols-3">
-                <RevenueCard label="Hoy" period={revenue.today} />
-                <RevenueCard label="Esta semana" period={revenue.week} />
-                <RevenueCard label="Este mes" period={revenue.month} />
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <RevenueCard
+                  label={dayRevenueOffset === 0 ? "Hoy" : "Por día"}
+                  period={revenue.today}
+                  icon="calendar"
+                  tone="blue"
+                  periodCaption={revenuePeriodLabel("día", dayRevenueOffset)}
+                  onPrevious={() => setDayRevenueOffset((value) => Math.min(4, value + 1))}
+                  onNext={() => setDayRevenueOffset((value) => Math.max(0, value - 1))}
+                  previousDisabled={dayRevenueOffset >= 4}
+                  nextDisabled={dayRevenueOffset === 0}
+                />
+                <RevenueCard
+                  label="Esta semana"
+                  period={revenue.week}
+                  icon="week"
+                  tone="accent"
+                  periodCaption={revenuePeriodLabel("semana", weekRevenueOffset)}
+                  onPrevious={() => setWeekRevenueOffset((value) => Math.min(4, value + 1))}
+                  onNext={() => setWeekRevenueOffset((value) => Math.max(0, value - 1))}
+                  previousDisabled={weekRevenueOffset >= 4}
+                  nextDisabled={weekRevenueOffset === 0}
+                />
+                <RevenueCard
+                  label="Este mes"
+                  period={revenue.month}
+                  icon="month"
+                  tone="amber"
+                  periodCaption={revenuePeriodLabel("mes", monthRevenueOffset)}
+                  onPrevious={() => setMonthRevenueOffset((value) => Math.min(4, value + 1))}
+                  onNext={() => setMonthRevenueOffset((value) => Math.max(0, value - 1))}
+                  previousDisabled={monthRevenueOffset >= 4}
+                  nextDisabled={monthRevenueOffset === 0}
+                />
+                <RevenueCard label="Dinero global" period={revenue.global} icon="coins" tone="green" periodCaption="Desde el inicio" />
               </div>
             ) : (
               <p className="rounded-xl border border-amber-300/30 bg-amber-300/[0.08] px-3.5 py-3 text-sm text-amber-200">
@@ -905,32 +1153,80 @@ export default function AdminPage({
         {tab === "agenda" && role === "owner" && (
           <>
             <section className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 sm:p-[22px]">
-              <div className="flex items-end gap-2 sm:flex-1 sm:min-w-[220px]">
-                <Field label="Fecha" className="flex-1">
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2 sm:contents">
+                <Field label="Buscar" className="min-w-0 sm:min-w-[200px] sm:flex-1">
                   <input
-                    type="date"
                     className="input"
-                    value={date}
-                    onChange={(e) => selectAgendaDate(e.target.value)}
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Nombre, teléfono o servicio"
+                    type="search"
                   />
                 </Field>
-                <button
-                  type="button"
-                  className="shrink-0 px-4 py-3 rounded-xl bg-[var(--card-2)] border border-[var(--border)] font-bold text-sm hover:border-[var(--accent)]"
-                  onClick={() => selectAgendaDate(today)}
-                >
-                  Hoy
-                </button>
+                <div ref={statusMenuRef} className="relative min-w-0 sm:hidden">
+                  <span className="mb-1.5 block text-sm font-semibold">Estado</span>
+                  <button
+                    type="button"
+                    aria-haspopup="menu"
+                    aria-expanded={statusMenuOpen}
+                    aria-controls="agenda-status-menu"
+                    onClick={() => setStatusMenuOpen((open) => !open)}
+                    className={`input flex h-[49px] w-[132px] max-w-full items-center justify-between gap-2 px-3 text-left transition ${
+                      statusMenuOpen ? "border-accent shadow-[0_0_0_3px_rgba(212,168,83,0.10)]" : ""
+                    }`}
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${selectedStatus.dot}`} aria-hidden="true" />
+                      <span className={`truncate text-[13px] font-bold ${selectedStatus.color}`}>
+                        {selectedStatus.label}
+                      </span>
+                    </span>
+                    <svg
+                      className={`h-4 w-4 shrink-0 text-[var(--muted)] transition-transform ${statusMenuOpen ? "rotate-180" : ""}`}
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.168l3.71-3.938a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                  {statusMenuOpen && (
+                    <div
+                      id="agenda-status-menu"
+                      role="menu"
+                      aria-label="Filtrar por estado"
+                      className="absolute right-0 top-[calc(100%+0.5rem)] z-30 w-[min(13.5rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] p-1.5 shadow-2xl shadow-black/30"
+                    >
+                      {statusOptions.map((option) => {
+                        const active = option.value === status;
+                        return (
+                          <button
+                            key={option.value || "all"}
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={active}
+                            onClick={() => {
+                              selectStatus(option.value);
+                              setStatusMenuOpen(false);
+                            }}
+                            className={`flex min-h-11 w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-[13px] font-bold transition hover:bg-[var(--card-2)] ${
+                              active ? `${option.active} ring-1 ring-inset ring-accent/40` : ""
+                            }`}
+                          >
+                            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${option.dot}`} aria-hidden="true" />
+                            <span className={`flex-1 ${option.color}`}>{option.label}</span>
+                            {active && (
+                              <svg className="h-4 w-4 shrink-0 text-accent" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                <path fillRule="evenodd" d="M16.704 5.29a1 1 0 0 1 .006 1.414l-7.25 7.333a1 1 0 0 1-1.42.006L3.29 9.293a1 1 0 0 1 1.42-1.406l4.04 4.081 6.54-6.61a1 1 0 0 1 1.414-.068Z" clipRule="evenodd" />
+                              </svg>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
-              <Field label="Buscar" className="sm:min-w-[200px]">
-                <input
-                  className="input"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Nombre, teléfono o servicio"
-                  type="search"
-                />
-              </Field>
               <button
                 type="button"
                 onClick={openManualBooking}
@@ -946,7 +1242,7 @@ export default function AdminPage({
               </p>
             )}
 
-            <div className="flex flex-wrap gap-2 pb-1 sm:pb-0">
+            <div className="hidden flex-wrap gap-2 pb-1 sm:flex sm:pb-0">
               <Stat
                 cls="text-[var(--text)] border-[var(--border)]"
                 label={status === "" ? `Todos (${bookings.length})` : "Todos"}
@@ -985,12 +1281,67 @@ export default function AdminPage({
             )}
 
             <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 sm:p-[22px] flex flex-col gap-3.5">
-              <h2 className="text-[16px] sm:text-[17px] font-bold">
-                {formatDate(date)}
-                {status !== "" && (
-                  <span className="text-[var(--muted)]"> · {STATUS_LABELS[status]}</span>
+              <div className="relative flex items-center justify-center gap-2 border-b border-[var(--border)] pb-3">
+                <button
+                  type="button"
+                  aria-label="Ver día anterior"
+                  onClick={() => selectAgendaDate(shiftDate(date, -1))}
+                  className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-[var(--border)] text-[var(--muted)] transition hover:border-accent hover:text-accent"
+                >
+                  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                    <path d="m14.5 18-6-6 6-6" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  aria-expanded={datePickerOpen}
+                  aria-controls="agenda-date-picker"
+                  onClick={() => setDatePickerOpen((open) => !open)}
+                  className="min-w-0 rounded-xl px-3 py-2 text-center transition hover:bg-[var(--bg-soft)]"
+                >
+                  <span className="block text-[16px] font-bold sm:text-[17px]">{formatDate(date)}</span>
+                  <span className="mt-0.5 block text-[11px] font-bold uppercase tracking-[0.16em] text-accent">
+                    {datePickerOpen ? "Ocultar calendario" : "Cambiar fecha"}
+                  </span>
+                  {status !== "" && (
+                    <span className="mt-1 block text-xs text-[var(--muted)]">{STATUS_LABELS[status]}</span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  aria-label="Ver día siguiente"
+                  onClick={() => selectAgendaDate(shiftDate(date, 1))}
+                  className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-[var(--border)] text-[var(--muted)] transition hover:border-accent hover:text-accent"
+                >
+                  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                    <path d="m9.5 18 6-6-6-6" />
+                  </svg>
+                </button>
+                {datePickerOpen && (
+                  <div
+                    id="agenda-date-picker"
+                    className="absolute left-1/2 top-[calc(100%+0.5rem)] z-20 w-[min(18rem,calc(100vw-3rem))] -translate-x-1/2 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-3.5 shadow-2xl"
+                  >
+                    <label className="flex flex-col gap-1.5 text-left text-xs font-bold text-[var(--muted)]">
+                      <span>Elegí una fecha</span>
+                      <input
+                        type="date"
+                        className="input"
+                        autoFocus
+                        value={date}
+                        onChange={(event) => selectAgendaDate(event.target.value)}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => selectAgendaDate(today)}
+                      className="mt-2.5 min-h-10 w-full rounded-xl border border-[var(--border)] px-3 py-2 text-sm font-bold text-[var(--muted)] transition hover:border-accent hover:text-accent"
+                    >
+                      Volver a hoy
+                    </button>
+                  </div>
                 )}
-              </h2>
+              </div>
               {loading ? (
                 <p className="text-[var(--muted)]">Cargando turnos…</p>
               ) : visibleBookings.length === 0 ? (
@@ -1025,31 +1376,63 @@ export default function AdminPage({
                           <span>${Number(b.price || 0).toLocaleString("es-AR")}</span>
                           <span aria-hidden="true">·</span>
                           <span>{b.duration} min</span>
+                          {b.status === "done" && (
+                            <span className="rounded-full border border-emerald-400/30 px-2 py-0.5 text-[11px] font-bold text-emerald-400">
+                              Cobrado
+                            </span>
+                          )}
                         </div>
-                        <div className="break-words text-[13px] sm:text-sm text-[var(--muted)]">
-                          {b.phone}
-                        </div>
-                        <div className="mt-2 flex flex-col gap-2">
-                          <label className="text-[11px] font-bold uppercase tracking-wide text-[var(--muted)]" htmlFor={`note-${b._id}`}>
-                            Nota privada
-                          </label>
-                          <div className="flex flex-col gap-2 sm:flex-row">
-                            <textarea
-                              id={`note-${b._id}`}
-                              className="input min-h-16 resize-y text-[13px]"
-                              maxLength={500}
-                              value={noteDrafts[b._id] ?? ""}
-                              onChange={(event) => setNoteDrafts((current) => ({ ...current, [b._id]: event.target.value }))}
-                              placeholder="Preferencias o información interna"
-                            />
-                            <SmallBtn
-                              cls="shrink-0 bg-[var(--card-2)] text-[var(--muted)] border-[var(--border)] sm:self-end"
-                              onClick={() => saveNote(b._id)}
-                              disabled={savingNoteId === b._id}
-                            >
-                              {savingNoteId === b._id ? "Guardando…" : "Guardar nota"}
-                            </SmallBtn>
+                        {b.phone && (
+                          <div className="break-words text-[13px] sm:text-sm text-[var(--muted)]">
+                            {b.phone}
                           </div>
+                        )}
+                        <div className="mt-2">
+                          <button
+                            type="button"
+                            aria-expanded={Boolean(openNotes[b._id] || noteDrafts[b._id])}
+                            aria-controls={`note-editor-${b._id}`}
+                            onClick={() => setOpenNotes((current) => ({ ...current, [b._id]: !current[b._id] }))}
+                            className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-dashed border-[var(--border)] px-2.5 py-1.5 text-[12px] font-bold text-[var(--muted)] transition hover:border-accent hover:text-accent"
+                          >
+                            {noteDrafts[b._id] ? "Editar nota privada" : "Agregar nota privada"}
+                            <svg
+                              width="14"
+                              height="14"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              className={openNotes[b._id] || noteDrafts[b._id] ? "rotate-180 transition-transform" : "transition-transform"}
+                              aria-hidden="true"
+                            >
+                              <path d="m6 9 6 6 6-6" />
+                            </svg>
+                          </button>
+                          {(openNotes[b._id] || noteDrafts[b._id]) && (
+                            <div id={`note-editor-${b._id}`} className="mt-2 flex flex-col gap-2">
+                              <label className="text-[11px] font-bold uppercase tracking-wide text-[var(--muted)]" htmlFor={`note-${b._id}`}>
+                                Nota privada
+                              </label>
+                              <div className="flex flex-col gap-2 sm:flex-row">
+                                <textarea
+                                  id={`note-${b._id}`}
+                                  className="input min-h-16 resize-y text-[13px]"
+                                  maxLength={500}
+                                  value={noteDrafts[b._id] ?? ""}
+                                  onChange={(event) => setNoteDrafts((current) => ({ ...current, [b._id]: event.target.value }))}
+                                  placeholder="Preferencias o información interna"
+                                />
+                                <SmallBtn
+                                  cls="shrink-0 bg-[var(--card-2)] text-[var(--muted)] border-[var(--border)] sm:self-end"
+                                  onClick={() => saveNote(b._id)}
+                                  disabled={savingNoteId === b._id}
+                                >
+                                  {savingNoteId === b._id ? "Guardando…" : "Guardar nota"}
+                                </SmallBtn>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-2 sm:flex-col sm:items-end sm:gap-1.5">
@@ -1075,7 +1458,7 @@ export default function AdminPage({
                         )}
                         <SmallBtn
                           cls="flex-1 sm:flex-none bg-red-500/12 text-[var(--red)] border-red-500/40"
-                          onClick={() => removeBooking(b._id, b.name)}
+                          onClick={() => removeBooking(b)}
                         >
                           Eliminar
                         </SmallBtn>
@@ -2038,6 +2421,16 @@ export default function AdminPage({
             </div>
           </div>
         )}
+        <ConfirmDialog
+          open={Boolean(bookingToDelete)}
+          title="¿Anular este turno?"
+          description="El turno quedará cancelado, liberará el horario y conservará su historial."
+          detail={bookingToDelete ? `${bookingToDelete.name} · ${bookingToDelete.service} · ${formatDate(bookingToDelete.date)} · ${bookingToDelete.time} h` : undefined}
+          confirmLabel="Anular turno"
+          loading={deletingBooking}
+          onConfirm={confirmRemoveBooking}
+          onCancel={() => setBookingToDelete(null)}
+        />
       </div>
     </div>
   );

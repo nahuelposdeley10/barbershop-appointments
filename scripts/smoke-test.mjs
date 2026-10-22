@@ -27,5 +27,15 @@ await check("validación de reserva", "/api/bookings", 400, {
 });
 await check("fecha inválida", "/api/availability?date=bad", 400);
 await check("mes inválido", "/api/month?from=bad", 400);
+await check(
+  "tenant inexistente en disponibilidad",
+  "/api/availability?date=2026-10-22&tenant=codex-smoke-missing-tenant",
+  404
+);
+await check(
+  "tenant inexistente en calendario mensual",
+  "/api/month?from=2026-10-22&tenant=codex-smoke-missing-tenant",
+  404
+);
 
 console.log(`Smoke test OK: ${baseUrl}`);

@@ -15,9 +15,17 @@ const bookingSchema = new mongoose.Schema(
       enum: ["confirmed", "cancelled", "done"],
       default: "confirmed",
     },
+    paymentStatus: {
+      type: String,
+      enum: ["pending", "paid", "refunded"],
+      default: "pending",
+      index: true,
+    },
     adminNote: { type: String, default: "", select: false, maxlength: 500 },
     manageTokenHash: { type: String, select: false, index: true },
     cancelledAt: { type: Date },
+    cancelledBy: { type: String, default: "" },
+    cancelReason: { type: String, default: "", maxlength: 300 },
   },
   { timestamps: true }
 );
@@ -25,6 +33,7 @@ const bookingSchema = new mongoose.Schema(
 bookingSchema.index({ tenantId: 1, date: 1, time: 1, status: 1 });
 
 export type BookingStatus = "confirmed" | "cancelled" | "done";
+export type PaymentStatus = "pending" | "paid" | "refunded";
 
 export type BookingDoc = {
   _id: string;
@@ -37,9 +46,12 @@ export type BookingDoc = {
   date: string;
   time: string;
   status: BookingStatus;
+  paymentStatus: PaymentStatus;
   adminNote?: string;
   manageTokenHash?: string;
   cancelledAt?: Date;
+  cancelledBy?: string;
+  cancelReason?: string;
 };
 
 // Reuse the model if already compiled (avoids errors on hot-reload)

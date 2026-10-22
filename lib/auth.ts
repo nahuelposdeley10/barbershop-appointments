@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { AdminUser } from "@/lib/models/AdminUser";
 import { AdminSession } from "@/lib/models/AdminSession";
+import { Tenant } from "@/lib/models/Tenant";
 
 export const ADMIN_SESSION_COOKIE = "barber_admin_session";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
@@ -119,9 +120,13 @@ export async function setAdminCredentials(email: string, password: string, userI
     await AdminUser.create({ email: cleanEmail, passwordHash: hashPassword(cleanPassword), role: "owner" });
     return { email: cleanEmail };
   }
+  const credentialsChanged = user.email !== cleanEmail || Boolean(cleanPassword);
   user.email = cleanEmail;
   if (cleanPassword) user.passwordHash = hashPassword(cleanPassword);
   await user.save();
+  if (credentialsChanged) {
+    await AdminSession.deleteMany({ userId: String(user._id) });
+  }
   return { email: user.email };
 }
 
@@ -191,6 +196,10 @@ export async function getAdminContext(req: NextRequest): Promise<AdminContext | 
         : null;
       if (session.impersonatedBy && actor?.role !== "superadmin") return null;
       if (user) {
+        if (user.role === "owner" && user.tenantId) {
+          const tenant = await Tenant.findOne({ _id: user.tenantId, status: "active" }).select("_id").lean();
+          if (!tenant) return null;
+        }
         return {
           userId: String(user._id),
           email: user.email,
@@ -205,7 +214,8 @@ export async function getAdminContext(req: NextRequest): Promise<AdminContext | 
 
   // Compatibilidad temporal para integraciones antiguas, sin fallback inseguro.
   const configuredToken = process.env.ADMIN_TOKEN?.trim();
-  if (configuredToken && configuredToken.length >= 32 && bearerToken(req) === configuredToken) {
+  const legacyTokenEnabled = process.env.ALLOW_ADMIN_TOKEN === "true";
+  if (legacyTokenEnabled && configuredToken && configuredToken.length >= 32 && bearerToken(req) === configuredToken) {
     const user = await AdminUser.findOne().sort({ createdAt: 1 });
     if (user) {
       return {

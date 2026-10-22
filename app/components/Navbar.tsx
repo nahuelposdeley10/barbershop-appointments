@@ -4,10 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { BarberPole } from "./booking/BarberIcons";
 
-const CONFIG = {
-  reservarUrl: "/reservar",
-};
-
 const Icons = {
   menu: (
     <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -108,6 +104,12 @@ export default function Navbar({
   }, [open]);
 
   const panelLinks = adminRole === "superadmin" ? superadminPanelLinks : ownerPanelLinks;
+  const publicHomeUrl = tenantSlug ? `/b/${tenantSlug}` : "/#hero";
+  const reservationUrl = tenantSlug ? `/b/${tenantSlug}/reservar` : "/reservar";
+  const publicLinks = links.map((link) => ({
+    ...link,
+    href: tenantSlug ? `/b/${tenantSlug}${link.href.slice(1)}` : link.href,
+  }));
 
   function selectPanelTab(tab: AdminPanelTab) {
     onAdminTabChange?.(tab);
@@ -150,7 +152,7 @@ export default function Navbar({
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-          <Link href={adminMode ? "/admin" : "/#hero"} className="flex items-center gap-2.5 group min-w-0">
+          <Link href={adminMode ? "/admin" : publicHomeUrl} className="flex items-center gap-2.5 group min-w-0">
             {logo ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -194,7 +196,7 @@ export default function Navbar({
           ) : (
             <>
               <div className="hidden md:flex items-center gap-8">
-                {links.map((link) => (
+                {publicLinks.map((link) => (
                   <a
                     key={link.href}
                     href={link.href}
@@ -220,7 +222,7 @@ export default function Navbar({
                   </Link>
                 )}
                 <Link
-                  href={CONFIG.reservarUrl}
+                  href={reservationUrl}
                   className="bg-accent text-zinc-950 px-5 py-2 rounded-full text-sm font-semibold hover:bg-accent-hover transition-colors"
                 >
                   Reservar Turno
@@ -368,7 +370,7 @@ export default function Navbar({
       {open && !adminMode && (
         <div className="md:hidden border-t border-zinc-800/50">
           <div className="px-5 py-5 space-y-1">
-            {links.map((link) => (
+            {publicLinks.map((link) => (
               <a
                 key={link.href}
                 href={link.href}
@@ -399,7 +401,7 @@ export default function Navbar({
               </Link>
             )}
             <Link
-              href={CONFIG.reservarUrl}
+              href={reservationUrl}
               className="block bg-accent text-zinc-950 px-5 py-3.5 rounded-full text-base font-semibold text-center hover:bg-accent-hover transition-colors mt-3"
               onClick={() => setOpen(false)}
             >

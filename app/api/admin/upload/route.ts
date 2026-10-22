@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { v2 as cloudinary } from "cloudinary";
-import { requireAdmin } from "@/lib/auth";
+import { getAdminContext } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,7 +13,8 @@ cloudinary.config({
 
 export async function POST(req: NextRequest) {
   try {
-    if (!(await requireAdmin(req))) {
+    const context = await getAdminContext(req);
+    if (!context) {
       return Response.json({ error: "No autorizado" }, { status: 401 });
     }
 
@@ -33,13 +34,19 @@ export async function POST(req: NextRequest) {
     if (!(file instanceof File)) {
       return Response.json({ error: "No se recibió ninguna imagen" }, { status: 400 });
     }
+    const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
+    if (!allowedTypes.has(file.type)) {
+      return Response.json({ error: "Solo se permiten imágenes JPG, PNG, WebP o AVIF" }, { status: 400 });
+    }
+    if (file.size <= 0 || file.size > 8 * 1024 * 1024) {
+      return Response.json({ error: "La imagen debe pesar como máximo 8 MB" }, { status: 400 });
+    }
 
-    const folder = data.get("folder");
     const buffer = Buffer.from(await file.arrayBuffer());
     const dataUri = `data:${file.type};base64,${buffer.toString("base64")}`;
 
     const result = await cloudinary.uploader.upload(dataUri, {
-      folder: typeof folder === "string" && folder ? folder : "barberia",
+      folder: `barberia/${context.tenantId || "platform"}`,
       resource_type: "image",
       overwrite: true,
     });

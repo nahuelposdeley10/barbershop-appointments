@@ -4,6 +4,8 @@ import {
   normalizeDate,
   normalizeWhatsapp,
   defaultSettings,
+  isValidTime,
+  toMinutes,
 } from "@/lib/booking-logic";
 import { getAdminAccount, getAdminContext, setAdminCredentials } from "@/lib/auth";
 import { Setting } from "@/lib/models/Setting";
@@ -198,44 +200,67 @@ export async function PUT(req: NextRequest) {
         .slice(0, 12);
     }
     if (Array.isArray(body.services)) {
-      current.services = body.services
+      const services = body.services
         .filter((s) => s && typeof s.name === "string" && s.name.trim())
         .map((s) => {
           const sv = s as Record<string, unknown>;
+          const price = Number(sv.price);
+          const duration = Number(sv.duration);
+          if (!Number.isFinite(price) || price < 0 || price > 10_000_000) {
+            throw new Error("Cada servicio debe tener un precio válido");
+          }
+          if (!Number.isFinite(duration) || duration < 5 || duration > 480) {
+            throw new Error("Cada servicio debe tener una duración entre 5 y 480 minutos");
+          }
           return {
             name: (sv.name as string).trim().slice(0, 60),
-            price: Number(sv.price) || 0,
-            duration: Math.min(Math.max(Number(sv.duration) || 30, 5), 480),
+            price: Math.round(price),
+            duration: Math.round(duration),
             img: typeof sv.img === "string" ? sv.img.trim().slice(0, 500) : "",
           };
         });
+      if (services.length === 0) {
+        return Response.json({ error: "Debe existir al menos un servicio" }, { status: 400 });
+      }
+      const names = new Set<string>();
+      for (const service of services) {
+        const key = service.name.toLowerCase();
+        if (names.has(key)) {
+          return Response.json({ error: "No puede haber servicios repetidos" }, { status: 400 });
+        }
+        names.add(key);
+      }
+      current.services = services;
     }
     if (Array.isArray(body.days) && body.days.length === 7) {
-      current.days = body.days.map((d, i: number) => ({
+      const days = body.days.map((d, i: number) => ({
         day: i,
         enabled: Boolean(d.enabled),
-        open:
-          typeof d.open === "string" && /^\d{2}:\d{2}$/.test(d.open)
-            ? d.open
-            : "09:00",
-        close:
-          typeof d.close === "string" && /^\d{2}:\d{2}$/.test(d.close)
-            ? d.close
-            : "20:00",
+        open: typeof d.open === "string" ? d.open : "",
+        close: typeof d.close === "string" ? d.close : "",
       }));
+      for (const day of days) {
+        if (!isValidTime(day.open) || !isValidTime(day.close) || toMinutes(day.open) >= toMinutes(day.close)) {
+          return Response.json({ error: "Revisá los horarios: la apertura debe ser anterior al cierre" }, { status: 400 });
+        }
+      }
+      current.days = days;
     }
     if (typeof body.slotMinutes === "number") {
       const slotMinutes = Math.round(body.slotMinutes);
-      if (!Number.isFinite(slotMinutes) || slotMinutes < 1) {
+      if (!Number.isFinite(slotMinutes) || slotMinutes < 5 || slotMinutes > 240) {
         return Response.json(
-          { error: "La separación entre turnos debe ser de al menos 1 minuto." },
+          { error: "La separación entre turnos debe estar entre 5 y 240 minutos." },
           { status: 400 }
         );
       }
       current.slotMinutes = slotMinutes;
     }
     if (typeof body.cantidadBarberos === "number") {
-      current.cantidadBarberos = Math.max(1, Math.round(body.cantidadBarberos));
+      if (!Number.isFinite(body.cantidadBarberos) || body.cantidadBarberos < 1 || body.cantidadBarberos > 20) {
+        return Response.json({ error: "La cantidad de barberos debe estar entre 1 y 20" }, { status: 400 });
+      }
+      current.cantidadBarberos = Math.round(body.cantidadBarberos);
     }
     const account = await getAdminAccount(context.userId);
     const requestedEmail =
@@ -255,6 +280,9 @@ export async function PUT(req: NextRequest) {
     }
     return Response.json(await sanitizeSettings(current, context.userId));
   } catch (err) {
+    if (err instanceof Error && /Cada servicio/.test(err.message)) {
+      return Response.json({ error: err.message }, { status: 400 });
+    }
     console.error(err);
     return Response.json({ error: "Error del servidor" }, { status: 500 });
   }
