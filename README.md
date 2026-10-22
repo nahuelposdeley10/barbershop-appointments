@@ -37,7 +37,7 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 ## Operación de la barbería
 
-Copiá `.env.example` como `.env.local` y configurá `MONGODB_URI`, `ADMIN_SESSION_SECRET`, `ADMIN_INITIAL_EMAIL`, `ADMIN_INITIAL_PASSWORD` y `NEXT_PUBLIC_SITE_URL`. En una instalación nueva, las credenciales iniciales se usan solo para crear el administrador; después la contraseña queda almacenada como hash.
+Copiá `.env.example` como `.env.local` y configurá `MONGODB_URI`, `ADMIN_SESSION_SECRET`, `ADMIN_INITIAL_EMAIL`, `ADMIN_INITIAL_PASSWORD`, `DEFAULT_TENANT_SLUG` y `NEXT_PUBLIC_SITE_URL`. En una instalación nueva, las credenciales iniciales se usan solo para crear el administrador; después la contraseña queda almacenada como hash.
 
 ```bash
 npm run dev
@@ -47,5 +47,7 @@ npm run build
 ```
 
 `npm test` ejecuta un smoke test sin crear turnos. También acepta `BASE_URL` para verificar otro entorno. Después de publicar, comprobá `GET /api/health` y conservá backups de MongoDB con un procedimiento probado de restauración.
+
+Para migrar una instalación single-tenant a multi-tenant, ejecutá primero `npm run migrate:multi-tenant` para revisar el dry-run. Aplicá la migración únicamente contra una base de desarrollo aislada usando `SUPERADMIN_PASSWORD` en el entorno del proceso y `npm run migrate:multi-tenant -- --apply`.
 
 No publiques secretos, cookies, contraseñas ni la URI de MongoDB en commits, logs o mensajes.

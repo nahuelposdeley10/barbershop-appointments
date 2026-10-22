@@ -16,11 +16,14 @@ import { Booking } from "@/lib/models/Booking";
 import { BookingLock } from "@/lib/models/BookingLock";
 import { rateLimited } from "@/lib/rate-limit";
 import { createBookingManageToken } from "@/lib/booking-access";
+import { logRequestError, requestId, withRequestId } from "@/lib/request-id";
+import { getTenantForRequest, tenantFilter } from "@/lib/tenancy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
+  const id = requestId(req);
   try {
     if (rateLimited(req, "create-booking", 12, 60 * 60 * 1000)) {
       return Response.json(
@@ -67,7 +70,9 @@ export async function POST(req: NextRequest) {
     }
 
     await connectDB();
-    const settings = await getSettings();
+    const tenant = await getTenantForRequest(req);
+    const tenantId = tenant ? String(tenant._id) : undefined;
+    const settings = await getSettings(tenantId);
     const serviceCfg = settings.services.find((s) => s.name === cleanService);
     if (!serviceCfg) {
       return Response.json({ error: "Servicio inválido" }, { status: 400 });
@@ -122,11 +127,14 @@ export async function POST(req: NextRequest) {
       await session.withTransaction(async () => {
         // Serializa las reservas del mismo día para evitar sobreventa por carreras concurrentes.
         await BookingLock.findOneAndUpdate(
-          { date: d },
-          { $setOnInsert: { date: d } },
+          { ...tenantFilter(tenantId), date: d },
+          { $setOnInsert: { ...(tenantId ? { tenantId } : {}), date: d } },
           { upsert: true, new: true, session }
         );
-        const openings = await Booking.find({ date: d, status: { $ne: "cancelled" } }).session(session);
+        const openings = await Booking.find({ ...tenantFilter(tenantId), date: d, status: { $ne: "cancelled" } })
+          .select("time duration")
+          .session(session)
+          .lean();
         const sillas = Math.max(1, settings.cantidadBarberos || 1);
         const ocupadas = openings.filter((b) =>
           overlaps(start, serviceCfg.duration, toMinutes(b.time), b.duration)
@@ -145,6 +153,7 @@ export async function POST(req: NextRequest) {
             date: d,
             time: cleanTime,
             status: "confirmed",
+            ...(tenantId ? { tenantId } : {}),
             manageTokenHash: manageToken.hash,
           }],
           { session }
@@ -173,8 +182,8 @@ export async function POST(req: NextRequest) {
       { status: 201 }
     );
   } catch (err) {
-    console.error(err);
-    return Response.json({ error: "Error del servidor" }, { status: 500 });
+    logRequestError("create-booking", id, err);
+    return withRequestId(Response.json({ error: "Error del servidor", requestId: id }, { status: 500 }), id);
   }
 }
 

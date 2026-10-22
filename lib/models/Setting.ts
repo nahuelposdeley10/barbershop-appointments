@@ -31,6 +31,7 @@ const profesionalSchema = new mongoose.Schema(
 );
 
 const settingSchema = new mongoose.Schema({
+  tenantId: { type: mongoose.Schema.Types.ObjectId, ref: "Tenant", unique: true, sparse: true, index: true },
   barberName: { type: String, default: "Barbería" },
   message: { type: String, default: "Reservá tu turno online" },
   slogan: { type: String, default: "Tu estilo, nuestra pasión" },
@@ -93,6 +94,7 @@ export type ProfesionalSetting = {
 };
 
 export type SettingsDoc = {
+  tenantId?: string;
   barberName: string;
   message: string;
   slogan: string;

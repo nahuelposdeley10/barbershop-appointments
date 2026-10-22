@@ -5,7 +5,7 @@ import {
   normalizeWhatsapp,
   defaultSettings,
 } from "@/lib/booking-logic";
-import { getAdminAccount, requireAdmin, setAdminCredentials } from "@/lib/auth";
+import { getAdminAccount, getAdminContext, setAdminCredentials } from "@/lib/auth";
 import { Setting } from "@/lib/models/Setting";
 
 export const runtime = "nodejs";
@@ -36,14 +36,19 @@ function normalizeMapLink(value: unknown): string | null {
 
 export async function GET(req: NextRequest) {
   try {
-    if (!(await requireAdmin(req))) {
+    const context = await getAdminContext(req);
+    if (!context) {
       return Response.json({ error: "No autorizado" }, { status: 401 });
+    }
+    if (context.role === "superadmin") {
+      return Response.json({ error: "El superadmin administra barberías desde su sección." }, { status: 403 });
     }
     await connectDB();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let doc: any = await Setting.findOne();
+    let doc: any = await Setting.findOne(context.tenantId ? { tenantId: context.tenantId } : {});
     if (!doc) {
       doc = await Setting.create({
+        ...(context.tenantId ? { tenantId: context.tenantId } : {}),
         barberName: "Barbería Los Tilos",
         message: "Reservá tu turno online sin esperas.",
         services: [
@@ -65,7 +70,7 @@ export async function GET(req: NextRequest) {
       fillDefaults(doc);
       await doc.save();
     }
-    return Response.json(await sanitizeSettings(doc));
+    return Response.json(await sanitizeSettings(doc, context.userId));
   } catch (err) {
     console.error(err);
     return Response.json({ error: "Error del servidor" }, { status: 500 });
@@ -74,14 +79,19 @@ export async function GET(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
-    if (!(await requireAdmin(req))) {
+    const context = await getAdminContext(req);
+    if (!context) {
       return Response.json({ error: "No autorizado" }, { status: 401 });
+    }
+    if (context.role === "superadmin") {
+      return Response.json({ error: "El superadmin administra barberías desde su sección." }, { status: 403 });
     }
     await connectDB();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let current: any = await Setting.findOne();
+    let current: any = await Setting.findOne(context.tenantId ? { tenantId: context.tenantId } : {});
     if (!current) {
       current = await Setting.create({
+        ...(context.tenantId ? { tenantId: context.tenantId } : {}),
         barberName: "Barbería Los Tilos",
         message: "Reservá tu turno online",
         services: [
@@ -227,7 +237,7 @@ export async function PUT(req: NextRequest) {
     if (typeof body.cantidadBarberos === "number") {
       current.cantidadBarberos = Math.max(1, Math.round(body.cantidadBarberos));
     }
-    const account = await getAdminAccount();
+    const account = await getAdminAccount(context.userId);
     const requestedEmail =
       typeof body.adminEmail === "string" && body.adminEmail.trim()
         ? body.adminEmail
@@ -241,20 +251,20 @@ export async function PUT(req: NextRequest) {
 
     await current.save();
     if (requestedEmail.trim() || requestedPassword) {
-      await setAdminCredentials(requestedEmail, requestedPassword);
+      await setAdminCredentials(requestedEmail, requestedPassword, context.userId);
     }
-    return Response.json(await sanitizeSettings(current));
+    return Response.json(await sanitizeSettings(current, context.userId));
   } catch (err) {
     console.error(err);
     return Response.json({ error: "Error del servidor" }, { status: 500 });
   }
 }
 
-async function sanitizeSettings(doc: Record<string, unknown>) {
+async function sanitizeSettings(doc: Record<string, unknown>, userId?: string) {
   const candidate = doc as unknown as { toObject?: () => Record<string, unknown> };
   const plain = typeof candidate.toObject === "function" ? candidate.toObject() : { ...doc };
   delete plain.pin;
   delete plain.pinHash;
-  const account = await getAdminAccount();
+  const account = await getAdminAccount(userId);
   return { ...plain, adminEmail: account.email, adminPassword: "" };
 }

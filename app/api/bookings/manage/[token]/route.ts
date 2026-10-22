@@ -15,6 +15,7 @@ import { Booking } from "@/lib/models/Booking";
 import { BookingLock } from "@/lib/models/BookingLock";
 import mongoose from "mongoose";
 import { rateLimited } from "@/lib/rate-limit";
+import { tenantFilter } from "@/lib/tenancy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -71,7 +72,12 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   }
 
   await connectDB();
-  const settings = await getSettings();
+  const currentBooking = await Booking.findOne({
+    manageTokenHash: hashBookingManageToken(token),
+  }).select("tenantId");
+  if (!currentBooking) return Response.json({ error: "Turno no encontrado" }, { status: 404 });
+  const tenantId = currentBooking.tenantId ? String(currentBooking.tenantId) : undefined;
+  const settings = await getSettings(tenantId);
   const service = settings.services.find((item) => item.name === serviceName);
   if (!service) return Response.json({ error: "Servicio inválido" }, { status: 400 });
 
@@ -105,12 +111,13 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       const lockDates = [...new Set([booking.date, date])].sort();
       for (const lockDate of lockDates) {
         await BookingLock.findOneAndUpdate(
-          { date: lockDate },
-          { $setOnInsert: { date: lockDate } },
+          { ...tenantFilter(tenantId), date: lockDate },
+          { $setOnInsert: { ...(tenantId ? { tenantId } : {}), date: lockDate } },
           { upsert: true, new: true, session }
         );
       }
       const openings = await Booking.find({
+        ...tenantFilter(tenantId),
         date,
         status: { $ne: "cancelled" },
         _id: { $ne: booking._id },

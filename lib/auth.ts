@@ -10,6 +10,15 @@ const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_FAILURES = 5;
 const loginFailures = new Map<string, { count: number; firstFailureAt: number }>();
 
+export type AdminContext = {
+  userId: string;
+  email: string;
+  role: "superadmin" | "owner";
+  tenantId: string | null;
+  isImpersonating: boolean;
+  actorUserId?: string;
+};
+
 function sessionSecret() {
   const secret = process.env.ADMIN_SESSION_SECRET?.trim();
   if (!secret && process.env.NODE_ENV !== "production") {
@@ -25,7 +34,7 @@ function hashToken(token: string) {
   return crypto.createHmac("sha256", sessionSecret()).update(token).digest("hex");
 }
 
-function hashPassword(password: string) {
+export function hashPassword(password: string) {
   const salt = crypto.randomBytes(16).toString("hex");
   const digest = crypto.scryptSync(password, salt, 64).toString("hex");
   return `${salt}:${digest}`;
@@ -58,7 +67,7 @@ export async function verifyAdminCredentials(email: string, password: string) {
   if (!validEmail(cleanEmail) || cleanPassword.length < 4 || cleanPassword.length > 128) return false;
 
   await connectDB();
-  const user = await AdminUser.findOne().select("+passwordHash");
+  const user = await AdminUser.findOne({ email: cleanEmail }).select("+passwordHash");
   if (user) {
     return user.email === cleanEmail && verifyPasswordHash(cleanPassword, user.passwordHash);
   }
@@ -73,17 +82,27 @@ export async function verifyAdminCredentials(email: string, password: string) {
     return false;
   }
 
-  await AdminUser.create({ email: cleanEmail, passwordHash: hashPassword(cleanPassword) });
+  await AdminUser.create({
+    email: cleanEmail,
+    passwordHash: hashPassword(cleanPassword),
+    role: "superadmin",
+    tenantId: null,
+  });
   return true;
 }
 
-export async function getAdminAccount() {
+export async function getAdminUserByEmail(email: string) {
   await connectDB();
-  const user = await AdminUser.findOne().select("email");
+  return AdminUser.findOne({ email: normalizeEmail(email) });
+}
+
+export async function getAdminAccount(userId?: string) {
+  await connectDB();
+  const user = await AdminUser.findOne(userId ? { _id: userId } : {}).select("email");
   return { email: user?.email || normalizeEmail(process.env.ADMIN_INITIAL_EMAIL || "") };
 }
 
-export async function setAdminCredentials(email: string, password: string) {
+export async function setAdminCredentials(email: string, password: string, userId?: string) {
   const cleanEmail = normalizeEmail(email);
   const cleanPassword = typeof password === "string" ? password : "";
   if (!validEmail(cleanEmail)) {
@@ -94,10 +113,10 @@ export async function setAdminCredentials(email: string, password: string) {
   }
 
   await connectDB();
-  const user = await AdminUser.findOne().select("+passwordHash");
+  const user = await AdminUser.findOne(userId ? { _id: userId } : {}).select("+passwordHash");
   if (!user) {
     if (!cleanPassword) throw new Error("Ingresá una contraseña para crear el acceso");
-    await AdminUser.create({ email: cleanEmail, passwordHash: hashPassword(cleanPassword) });
+    await AdminUser.create({ email: cleanEmail, passwordHash: hashPassword(cleanPassword), role: "owner" });
     return { email: cleanEmail };
   }
   user.email = cleanEmail;
@@ -106,11 +125,13 @@ export async function setAdminCredentials(email: string, password: string) {
   return { email: user.email };
 }
 
-export async function createAdminSession() {
+export async function createAdminSession(userId?: string, impersonatedBy?: string) {
   await connectDB();
   const token = crypto.randomBytes(32).toString("hex");
   await AdminSession.create({
     tokenHash: hashToken(token),
+    ...(userId ? { userId } : {}),
+    ...(impersonatedBy ? { impersonatedBy } : {}),
     expiresAt: new Date(Date.now() + SESSION_MAX_AGE_SECONDS * 1000),
   });
   return token;
@@ -153,7 +174,7 @@ function bearerToken(req: NextRequest) {
   return header.startsWith("Bearer ") ? header.slice(7).trim() : "";
 }
 
-export async function requireAdmin(req: NextRequest) {
+export async function getAdminContext(req: NextRequest): Promise<AdminContext | null> {
   await connectDB();
   const cookieToken = req.cookies.get(ADMIN_SESSION_COOKIE)?.value || "";
   if (cookieToken) {
@@ -161,14 +182,46 @@ export async function requireAdmin(req: NextRequest) {
       tokenHash: hashToken(cookieToken),
       expiresAt: { $gt: new Date() },
     });
-    if (session) return true;
+    if (session) {
+      const user = session.userId
+        ? await AdminUser.findById(session.userId)
+        : await AdminUser.findOne().sort({ createdAt: 1 });
+      const actor = session.impersonatedBy
+        ? await AdminUser.findById(session.impersonatedBy).select("role")
+        : null;
+      if (session.impersonatedBy && actor?.role !== "superadmin") return null;
+      if (user) {
+        return {
+          userId: String(user._id),
+          email: user.email,
+          role: user.role || "owner",
+          tenantId: user.tenantId ? String(user.tenantId) : null,
+          isImpersonating: Boolean(session.impersonatedBy),
+          ...(session.impersonatedBy ? { actorUserId: String(session.impersonatedBy) } : {}),
+        };
+      }
+    }
   }
 
   // Compatibilidad temporal para integraciones antiguas, sin fallback inseguro.
   const configuredToken = process.env.ADMIN_TOKEN?.trim();
-  return Boolean(
-    configuredToken && configuredToken.length >= 32 && bearerToken(req) === configuredToken
-  );
+  if (configuredToken && configuredToken.length >= 32 && bearerToken(req) === configuredToken) {
+    const user = await AdminUser.findOne().sort({ createdAt: 1 });
+    if (user) {
+      return {
+        userId: String(user._id),
+        email: user.email,
+        role: user.role || "superadmin",
+        tenantId: user.tenantId ? String(user.tenantId) : null,
+        isImpersonating: false,
+      };
+    }
+  }
+  return null;
+}
+
+export async function requireAdmin(req: NextRequest) {
+  return Boolean(await getAdminContext(req));
 }
 
 export async function revokeAdminSession(req: NextRequest) {
@@ -176,6 +229,21 @@ export async function revokeAdminSession(req: NextRequest) {
   if (!token) return;
   await connectDB();
   await AdminSession.deleteOne({ tokenHash: hashToken(token) });
+}
+
+export async function restoreImpersonatorSession(req: NextRequest) {
+  const token = req.cookies.get(ADMIN_SESSION_COOKIE)?.value || "";
+  if (!token) return null;
+  await connectDB();
+  const session = await AdminSession.findOne({
+    tokenHash: hashToken(token),
+    expiresAt: { $gt: new Date() },
+  });
+  if (!session?.impersonatedBy) return null;
+  const actor = await AdminUser.findOne({ _id: session.impersonatedBy, role: "superadmin" });
+  if (!actor) return null;
+  await AdminSession.deleteOne({ _id: session._id });
+  return createAdminSession(String(actor._id));
 }
 
 export function setAdminSessionCookie(response: NextResponse, token: string) {

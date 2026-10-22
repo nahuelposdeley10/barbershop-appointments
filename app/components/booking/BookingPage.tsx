@@ -222,7 +222,7 @@ async function verifyBookings(
   }
 }
 
-export default function BookingPage() {
+export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
   const today = localDateStr(new Date());
   const maxDate = (() => {
     const d = new Date();
@@ -318,7 +318,7 @@ export default function BookingPage() {
   useEffect(() => {
     let cancelled = false;
     const requestedDate = date || localDateStr(new Date());
-    getAvailability(requestedDate, selectedService)
+    getAvailability(requestedDate, selectedService, tenantSlug)
       .then((data) => {
         if (cancelled) return;
         setBarberName(data.barberName);
@@ -337,11 +337,11 @@ export default function BookingPage() {
     return () => {
       cancelled = true;
     };
-  }, [date, selectedService]);
+  }, [date, selectedService, tenantSlug]);
 
   async function refreshSlots() {
     try {
-      const data = await getAvailability(date || today, selectedService);
+      const data = await getAvailability(date || today, selectedService, tenantSlug);
       setBarberName(data.barberName);
       setLogo(data.imgLogo || "");
       setMessage(data.message || "");
@@ -374,7 +374,7 @@ export default function BookingPage() {
         service: selectedService,
         date,
         time: selectedSlot,
-      });
+      }, tenantSlug);
       setBookings((prev) =>
         booking.manageToken
           ? [booking, ...prev.filter((entry) => entry.manageToken !== booking.manageToken)]
@@ -467,6 +467,14 @@ export default function BookingPage() {
               Reservá tu turno
             </h1>
             <p className="text-[#e7e2d8] drop-shadow text-[13px] sm:text-sm">{message}</p>
+            {bookings.length > 0 && (
+              <a
+                href="#mis-turnos"
+                className="mt-1 inline-flex min-h-10 items-center justify-center rounded-full border border-white/30 bg-black/25 px-4 text-xs font-extrabold text-white backdrop-blur-sm transition hover:bg-black/40"
+              >
+                Ver mis turnos ({bookings.length})
+              </a>
+            )}
           </div>
         </section>
 
@@ -608,6 +616,7 @@ export default function BookingPage() {
               minDate={today}
               maxDate={maxDate}
               service={selectedService}
+              tenantSlug={tenantSlug}
               onSelect={(d) => {
                 setDate(d);
                 setSelectedSlot("");

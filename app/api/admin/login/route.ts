@@ -3,6 +3,7 @@ import { connectDB } from "@/lib/db";
 import {
   clearLoginFailures,
   createAdminSession,
+  getAdminUserByEmail,
   isLoginRateLimited,
   recordLoginFailure,
   setAdminSessionCookie,
@@ -31,7 +32,8 @@ export async function POST(req: NextRequest) {
     if (await verifyAdminCredentials(email || "", password || "")) {
       clearLoginFailures(req);
       const response = NextResponse.json({ authenticated: true });
-      setAdminSessionCookie(response, await createAdminSession());
+      const user = await getAdminUserByEmail(email || "");
+      setAdminSessionCookie(response, await createAdminSession(user ? String(user._id) : undefined));
       return response;
     }
     recordLoginFailure(req);

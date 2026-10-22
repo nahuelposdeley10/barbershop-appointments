@@ -5,6 +5,7 @@ import Navbar from "./components/Navbar";
 import { BarberPole } from "./components/booking/BarberIcons";
 import { connectDB } from "@/lib/db";
 import { getSettings } from "@/lib/booking-logic";
+import { getTenantForSlugOrDefault } from "@/lib/tenancy";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,7 @@ type SiteProfesional = { nombre: string; rol: string; img: string; tags: string[
 
 type SiteData = {
   nombre: string;
+  message: string;
   slogan: string;
   heroTitle1: string;
   heroTitle2: string;
@@ -106,6 +108,7 @@ const IMG = {
 function fallbackSiteData(): SiteData {
   return {
     nombre: "Barbería Los Tilos",
+    message: "Reservá tu turno online",
     slogan: "Tu estilo, nuestra pasión",
     heroTitle1: "Tu Estilo,",
     heroTitle2: "Nuestra Pasión",
@@ -145,9 +148,10 @@ function fallbackSiteData(): SiteData {
   };
 }
 
-async function getSiteDataFromDatabase(): Promise<SiteData> {
+async function getSiteDataFromDatabase(tenantSlug?: string): Promise<SiteData> {
   await connectDB();
-  const s = await getSettings();
+  const tenant = await getTenantForSlugOrDefault(tenantSlug);
+  const s = await getSettings(tenant ? String(tenant._id) : undefined);
     const servicios: SiteService[] = (s.services || []).map(
       (sv: { name: string; price: number; duration: number; img?: string }) => ({
         nombre: sv.name || "Servicio",
@@ -174,6 +178,7 @@ async function getSiteDataFromDatabase(): Promise<SiteData> {
 
   return {
     nombre: typeof s.barberName === "string" ? s.barberName : "Barbería",
+    message: s.message || "Reservá tu turno online",
     slogan: s.slogan || "Tu estilo, nuestra pasión",
     heroTitle1: s.heroTitle1 || "Tu Estilo,",
     heroTitle2: s.heroTitle2 || "Nuestra Pasión",
@@ -199,16 +204,16 @@ async function getSiteDataFromDatabase(): Promise<SiteData> {
     imgGaleria:
       s.imgGaleria && s.imgGaleria.length > 0 ? s.imgGaleria : IMG.galeria,
     profesionales: profesionalesDb.length > 0 ? profesionalesDb : IMG.profesionales,
-    reservarUrl: "/reservar",
+    reservarUrl: tenant ? `/b/${tenant.slug}/reservar` : "/reservar",
     servicios,
     horarios,
   };
 }
 
-const getSiteData = cache(async (): Promise<SiteData> => {
+const getSiteData = cache(async (tenantSlug = ""): Promise<SiteData> => {
   try {
     return await Promise.race([
-      getSiteDataFromDatabase(),
+      getSiteDataFromDatabase(tenantSlug),
       new Promise<SiteData>((_, reject) => {
         // Keep this slightly above MongoDB's 3s connection timeout. A shorter
         // race can render the generic fallback while a cold function is still
@@ -299,17 +304,17 @@ const Icons = {
    ───────────────────────────────────────────── */
 function SectionDivider() {
   return (
-    <div className="flex items-center justify-center gap-4 py-2 opacity-50">
-      <div className="h-px w-24 bg-zinc-800" />
-      <BarberPole className="w-24 h-[6px]" />
-      <div className="h-px w-24 bg-zinc-800" />
+    <div className="flex items-center justify-center gap-3 py-2 opacity-50 sm:gap-4">
+      <div className="h-px w-16 bg-zinc-800 sm:w-24" />
+      <BarberPole className="w-20 h-[6px] sm:w-24" />
+      <div className="h-px w-16 bg-zinc-800 sm:w-24" />
     </div>
   );
 }
 
 function Hero({ data }: { data: SiteData }) {
   return (
-    <section id="hero" className="relative min-h-screen flex items-center justify-center overflow-hidden scroll-mt-0">
+    <section id="hero" className="relative min-h-[min(92svh,720px)] flex items-center justify-center overflow-hidden scroll-mt-0 sm:min-h-screen">
       {/* Background with image */}
       <div className="absolute inset-0">
         <Image
@@ -337,26 +342,26 @@ function Hero({ data }: { data: SiteData }) {
       </div>
 
       <div className="relative z-10 text-center px-4 sm:px-6 max-w-4xl mx-auto w-full">
-        <div className="flex items-center justify-center gap-3 mb-6 sm:mb-8">
+        <div className="flex items-center justify-center gap-2.5 mb-4 sm:gap-3 sm:mb-8">
           <div className="h-px w-10 sm:w-12 bg-accent/60" />
           <span className="text-accent text-xs sm:text-sm font-medium tracking-[0.3em] sm:tracking-[0.35em] uppercase">
-            Estilo & Tradición
+            {data.message}
           </span>
           <div className="h-px w-10 sm:w-12 bg-accent/60" />
         </div>
 
-        <h1 className="font-display text-[40px] min-[400px]:text-5xl sm:text-7xl lg:text-8xl font-bold leading-[1.05] tracking-tight mb-6 break-words">
+        <h1 className="font-display text-[34px] min-[400px]:text-[40px] sm:text-7xl lg:text-8xl font-bold leading-[1.05] tracking-tight mb-4 sm:mb-6 break-words">
           {data.heroTitle1}
           <br />
           <span className="text-accent">{data.heroTitle2}</span>
         </h1>
 
-        <p className="text-zinc-300 text-base sm:text-xl max-w-2xl mx-auto mb-8 leading-relaxed">
+        <p className="text-zinc-300 text-sm sm:text-xl max-w-2xl mx-auto mb-6 sm:mb-8 leading-relaxed">
           {data.heroDescription} En {data.nombre || "la barbería"} nos importa cada detalle.
         </p>
 
-        <div className="flex justify-center mb-8 sm:mb-10">
-          <BarberPole className="w-32 sm:w-40 h-[7px]" />
+        <div className="flex justify-center mb-6 sm:mb-10">
+          <BarberPole className="w-28 sm:w-40 h-[7px]" />
         </div>
 
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3 sm:gap-4 w-full">
@@ -375,7 +380,7 @@ function Hero({ data }: { data: SiteData }) {
           </a>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-8 mt-12 sm:mt-14 text-sm text-zinc-400">
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 sm:gap-8 mt-8 sm:mt-14 text-xs sm:text-sm text-zinc-400">
           <div className="flex items-center gap-2">
             <span className="text-accent">{Icons.star}</span>
             <span>+500 clientes felices</span>
@@ -410,15 +415,15 @@ function SectionHeader({
   align?: "center" | "left";
 }) {
   return (
-    <div className={`mb-12 sm:mb-16 ${align === "center" ? "text-center" : "text-left"}`}>
+    <div className={`mb-8 sm:mb-16 ${align === "center" ? "text-center" : "text-left"}`}>
       <span className="text-accent text-xs sm:text-sm font-medium tracking-[0.25em] uppercase">
         {eyebrow}
       </span>
-      <h2 className="font-display text-3xl sm:text-5xl font-bold mt-3 sm:mt-4 mb-4 sm:mb-5 leading-tight">
+      <h2 className="font-display text-2xl sm:text-5xl font-bold mt-2 sm:mt-4 mb-3 sm:mb-5 leading-tight">
         {title}
       </h2>
       {description && (
-        <p className="text-zinc-400 max-w-xl mx-auto text-base sm:text-lg leading-relaxed">{description}</p>
+        <p className="text-zinc-400 max-w-xl mx-auto text-sm sm:text-lg leading-relaxed">{description}</p>
       )}
     </div>
   );
@@ -428,7 +433,7 @@ function Profesionales({ data }: { data: SiteData }) {
   const profesionales = data.profesionales.filter((p) => p.nombre && p.img);
   if (profesionales.length === 0) return null;
   return (
-    <section id="profesionales" className="py-20 sm:py-24 px-4 bg-zinc-900/30 scroll-mt-16">
+    <section id="profesionales" className="py-14 sm:py-24 px-3 sm:px-4 bg-zinc-900/30 scroll-mt-16">
       <div className="max-w-7xl mx-auto">
         <SectionHeader
           eyebrow="Nuestro equipo"
@@ -436,7 +441,7 @@ function Profesionales({ data }: { data: SiteData }) {
           description="Un equipo de barberos y estilistas apasionados, listos para darte el mejor servicio."
         />
 
-        <div className="flex flex-wrap justify-center gap-5 sm:gap-8">
+        <div className="flex flex-wrap justify-center gap-4 sm:gap-8">
           {profesionales.map((prof) => (
             <div
               key={prof.nombre}
@@ -452,7 +457,7 @@ function Profesionales({ data }: { data: SiteData }) {
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/20 to-transparent" />
               </div>
-              <div className="absolute bottom-0 left-0 right-0 p-6">
+              <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-6">
                 <h3 className="font-display text-2xl font-bold">{prof.nombre}</h3>
                 <p className="text-accent text-sm mb-3">{prof.rol}</p>
                 <div className="flex flex-wrap gap-2">
@@ -483,7 +488,7 @@ function Servicios({ data }: { data: SiteData }) {
   }));
 
   return (
-    <section id="servicios" className="py-20 sm:py-24 px-4 scroll-mt-16">
+    <section id="servicios" className="py-14 sm:py-24 px-3 sm:px-4 scroll-mt-16">
       <div className="max-w-7xl mx-auto">
         <SectionHeader
           eyebrow="Lo que ofrecemos"
@@ -491,7 +496,7 @@ function Servicios({ data }: { data: SiteData }) {
           description="Servicios premium diseñados para que salgas con la mejor actitud y el look perfecto."
         />
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           {servicios.map((servicio) => (
             <div
               key={servicio.nombre}
@@ -507,7 +512,7 @@ function Servicios({ data }: { data: SiteData }) {
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/60 to-transparent" />
               </div>
-              <div className="p-6">
+              <div className="p-4 sm:p-6">
                 <div className="flex items-center justify-between mb-1">
                   <h3 className="text-lg font-semibold">{servicio.nombre}</h3>
                   <span className="text-accent font-bold text-lg">{servicio.precio}</span>
@@ -527,8 +532,8 @@ function Servicios({ data }: { data: SiteData }) {
 
 function SobreNosotros({ data }: { data: SiteData }) {
   return (
-    <section className="py-20 sm:py-24 px-4 bg-zinc-900/30">
-      <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-14 items-center">
+    <section className="py-14 sm:py-24 px-3 sm:px-4 bg-zinc-900/30">
+      <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-10 sm:gap-14 items-center">
         <div className="relative">
           <div className="rounded-2xl overflow-hidden border border-card-border relative aspect-[4/3]">
             <Image
@@ -539,8 +544,8 @@ function SobreNosotros({ data }: { data: SiteData }) {
               className="object-cover"
             />
           </div>
-          <div className="absolute -bottom-4 right-2 sm:-bottom-6 sm:-right-4 bg-accent text-zinc-950 rounded-2xl px-5 py-4 sm:p-6 shadow-2xl">
-            <p className="font-display text-3xl sm:text-4xl font-bold leading-none">+10</p>
+          <div className="absolute -bottom-3 right-2 sm:-bottom-6 sm:-right-4 bg-accent text-zinc-950 rounded-2xl px-4 py-3 sm:p-6 shadow-2xl">
+            <p className="font-display text-2xl sm:text-4xl font-bold leading-none">+10</p>
             <p className="text-xs sm:text-sm font-medium mt-1">años de experiencia</p>
           </div>
         </div>
@@ -549,15 +554,15 @@ function SobreNosotros({ data }: { data: SiteData }) {
           <span className="text-accent text-xs sm:text-sm font-medium tracking-[0.25em] uppercase">
             Sobre nosotros
           </span>
-          <h2 className="font-display text-3xl sm:text-5xl font-bold mt-3 sm:mt-4 mb-4 sm:mb-6 leading-tight">
+          <h2 className="font-display text-2xl sm:text-5xl font-bold mt-2 sm:mt-4 mb-3 sm:mb-6 leading-tight">
             {data.aboutTitle}
             <br />
             {data.aboutTitle2}
           </h2>
-          <p className="text-zinc-400 text-base sm:text-lg leading-relaxed mb-6">
+          <p className="text-zinc-400 text-sm sm:text-lg leading-relaxed mb-5 sm:mb-6">
             {data.aboutText}
           </p>
-          <div className="grid grid-cols-3 gap-4 sm:gap-6 mb-8">
+          <div className="grid grid-cols-3 gap-3 sm:gap-6 mb-6 sm:mb-8">
             {[
               ["+500", "Clientes"],
               ["12k", "Cortes"],
@@ -584,7 +589,7 @@ function SobreNosotros({ data }: { data: SiteData }) {
 
 function Galeria({ data }: { data: SiteData }) {
   return (
-    <section id="galeria" className="py-20 sm:py-24 px-4 scroll-mt-16">
+    <section id="galeria" className="py-14 sm:py-24 px-3 sm:px-4 scroll-mt-16">
       <div className="max-w-7xl mx-auto">
         <SectionHeader
           eyebrow="Nuestro trabajo habla"
@@ -592,7 +597,7 @@ function Galeria({ data }: { data: SiteData }) {
           description="Mirá algunos de los trabajos que hacemos todos los días."
         />
 
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5 sm:gap-4">
           {data.imgGaleria.map((src, i) => (
             <div
               key={i}
@@ -636,7 +641,7 @@ function Resenas({ nombre }: { nombre: string }) {
   ];
 
   return (
-    <section className="py-20 sm:py-24 px-4">
+    <section className="py-14 sm:py-24 px-3 sm:px-4">
       <div className="max-w-7xl mx-auto">
         <SectionHeader
           eyebrow="Opiniones reales"
@@ -644,11 +649,11 @@ function Resenas({ nombre }: { nombre: string }) {
           description={`La confianza de miles de clientes que eligen ${nombre || "la barbería"}.`}
         />
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-8">
           {resenas.map((resena) => (
             <div
               key={resena.nombre}
-              className="bg-card border border-card-border rounded-2xl p-8 hover:border-accent/30 transition-all"
+              className="bg-card border border-card-border rounded-2xl p-5 sm:p-8 hover:border-accent/30 transition-all"
             >
               <div className="flex text-accent mb-4">
                 {[...Array(5)].map((_, i) => (
@@ -667,7 +672,7 @@ function Resenas({ nombre }: { nombre: string }) {
 
 function Reservar({ data }: { data: SiteData }) {
   return (
-    <section className="py-20 sm:py-24 px-4">
+    <section className="py-14 sm:py-24 px-3 sm:px-4">
       <div className="max-w-5xl mx-auto">
         <div className="relative rounded-3xl overflow-hidden border border-card-border">
           <Image
@@ -679,14 +684,14 @@ function Reservar({ data }: { data: SiteData }) {
           />
           <div className="absolute inset-0 bg-zinc-950/85" />
 
-          <div className="relative z-10 p-7 sm:p-16 text-center">
+          <div className="relative z-10 p-5 sm:p-16 text-center">
             <span className="text-accent text-xs sm:text-sm font-medium tracking-[0.25em] uppercase">
               ¿Listo para un cambio?
             </span>
-            <h2 className="font-display text-3xl sm:text-5xl font-bold mt-3 sm:mt-4 mb-4 sm:mb-6 leading-tight">
+            <h2 className="font-display text-2xl sm:text-5xl font-bold mt-2 sm:mt-4 mb-3 sm:mb-6 leading-tight">
               Reservá Tu Turno
             </h2>
-            <p className="text-zinc-300 max-w-lg mx-auto mb-8 sm:mb-10 text-base sm:text-lg">
+            <p className="text-zinc-300 max-w-lg mx-auto mb-6 sm:mb-10 text-sm sm:text-lg">
               Elegí el servicio, dia, horario y confirmá en segundos. Rápido y fácil,
               desde tu celular o computadora.
             </p>
@@ -721,7 +726,7 @@ function Ubicacion({ data }: { data: SiteData }) {
   const mapLink = data.mapLink || `https://www.google.com/maps/search/?api=1&query=${data.mapaQuery}`;
 
   return (
-    <section id="ubicacion" className="py-20 sm:py-24 px-4 bg-zinc-900/30 scroll-mt-16">
+    <section id="ubicacion" className="py-14 sm:py-24 px-3 sm:px-4 bg-zinc-900/30 scroll-mt-16">
       <div className="max-w-7xl mx-auto">
         <SectionHeader
           eyebrow="Visitános"
@@ -729,7 +734,7 @@ function Ubicacion({ data }: { data: SiteData }) {
           description="Encontranos fácil y reservá tu próximo turno."
         />
 
-        <div className="grid lg:grid-cols-2 gap-8">
+        <div className="grid lg:grid-cols-2 gap-5 sm:gap-8">
           <div className="group relative h-[320px] overflow-hidden rounded-2xl border border-card-border sm:h-[400px]">
             <iframe
               src={`https://www.google.com/maps?q=${data.mapaQuery}&output=embed`}
@@ -755,8 +760,8 @@ function Ubicacion({ data }: { data: SiteData }) {
             </a>
           </div>
 
-          <div className="flex flex-col gap-6">
-            <div className="bg-card border border-card-border rounded-2xl p-6">
+          <div className="flex flex-col gap-4 sm:gap-6">
+            <div className="bg-card border border-card-border rounded-2xl p-4 sm:p-6">
               <div className="flex items-start gap-3">
                 <span className="text-accent mt-0.5">{Icons.mapPin}</span>
                 <div>
@@ -773,7 +778,7 @@ function Ubicacion({ data }: { data: SiteData }) {
               </div>
             </div>
 
-            <div className="bg-card border border-card-border rounded-2xl p-6">
+            <div className="bg-card border border-card-border rounded-2xl p-4 sm:p-6">
               <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
                 <span className="text-accent">{Icons.clock}</span>
                 Horarios
@@ -788,7 +793,7 @@ function Ubicacion({ data }: { data: SiteData }) {
               </div>
             </div>
 
-            <div className="bg-card border border-card-border rounded-2xl p-6">
+            <div className="bg-card border border-card-border rounded-2xl p-4 sm:p-6">
               <h3 className="font-semibold text-lg mb-4">Contacto</h3>
               <div className="flex flex-wrap gap-3">
                 <a
@@ -827,7 +832,7 @@ function Ubicacion({ data }: { data: SiteData }) {
 
 function Footer({ data }: { data: SiteData }) {
   return (
-    <footer className="border-t border-zinc-800/50 py-14 px-4">
+    <footer className="border-t border-zinc-800/50 py-10 sm:py-14 px-3 sm:px-4">
       <div className="max-w-7xl mx-auto">
         <div className="flex flex-col md:flex-row items-center justify-between gap-8">
           <div className="text-center md:text-left">
@@ -892,8 +897,14 @@ export async function generateMetadata() {
   };
 }
 
-export default async function Home() {
-  const data = await getSiteData();
+type HomeProps = {
+  searchParams?: Promise<{ tenant?: string | string[] }>;
+};
+
+export default async function Home({ searchParams }: HomeProps = {}) {
+  const params = searchParams ? await searchParams : {};
+  const tenantParam = Array.isArray(params.tenant) ? params.tenant[0] : params.tenant;
+  const data = await getSiteData(tenantParam || "");
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "HairSalon",

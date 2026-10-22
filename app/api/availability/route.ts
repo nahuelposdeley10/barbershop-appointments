@@ -12,23 +12,28 @@ import {
 } from "@/lib/booking-logic";
 import { Booking } from "@/lib/models/Booking";
 import { rateLimited } from "@/lib/rate-limit";
+import { logRequestError, requestId, withRequestId } from "@/lib/request-id";
+import { getTenantForRequest, tenantFilter } from "@/lib/tenancy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
+  const id = requestId(req);
   try {
     if (rateLimited(req, "availability", 120, 60 * 1000)) {
       return Response.json({ error: "Demasiadas consultas. Intentá nuevamente." }, { status: 429 });
     }
     await connectDB();
+    const tenant = await getTenantForRequest(req);
+    const tenantId = tenant ? String(tenant._id) : undefined;
     const search = req.nextUrl.searchParams;
     const date = normalizeDate(search.get("date") || "");
     if (!date) {
       return Response.json({ error: "Fecha inválida" }, { status: 400 });
     }
 
-    const settings = await getSettings();
+    const settings = await getSettings(tenantId);
     const today = localDateStr(new Date());
     const weekday = weekdayForDate(date);
     const dayCfg = settings.days.find((x) => x.day === weekday);
@@ -41,7 +46,9 @@ export async function GET(req: NextRequest) {
       const service = settings.services.find((s) => s.name === serviceName);
       const duration = service ? service.duration : settings.slotMinutes;
       const sillas = Math.max(1, settings.cantidadBarberos || 1);
-      const openings = await Booking.find({ date, status: { $ne: "cancelled" } });
+      const openings = await Booking.find({ ...tenantFilter(tenantId), date, status: { $ne: "cancelled" } })
+        .select("time duration")
+        .lean();
       const now = new Date();
       const nowMinutes = localMinutes(now);
       const isToday = date === today;
@@ -70,7 +77,7 @@ export async function GET(req: NextRequest) {
       slots,
     });
   } catch (err) {
-    console.error(err);
-    return Response.json({ error: "Error del servidor" }, { status: 500 });
+    logRequestError("availability", id, err);
+    return withRequestId(Response.json({ error: "Error del servidor", requestId: id }, { status: 500 }), id);
   }
 }

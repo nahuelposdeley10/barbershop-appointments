@@ -13,23 +13,28 @@ import {
 } from "@/lib/booking-logic";
 import { Booking } from "@/lib/models/Booking";
 import { rateLimited } from "@/lib/rate-limit";
+import { logRequestError, requestId, withRequestId } from "@/lib/request-id";
+import { getTenantForRequest, tenantFilter } from "@/lib/tenancy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
+  const id = requestId(req);
   try {
     if (rateLimited(req, "month-availability", 60, 60 * 1000)) {
       return Response.json({ error: "Demasiadas consultas. Intentá nuevamente." }, { status: 429 });
     }
     await connectDB();
+    const tenant = await getTenantForRequest(req);
+    const tenantId = tenant ? String(tenant._id) : undefined;
     const search = req.nextUrl.searchParams;
     const from = normalizeDate(search.get("from") || "");
     if (!from) {
       return Response.json({ error: "Fecha inválida" }, { status: 400 });
     }
 
-    const settings = await getSettings();
+    const settings = await getSettings(tenantId);
     const serviceName = search.get("service") || "";
     const service = settings.services.find((s) => s.name === serviceName);
     const duration = service ? service.duration : settings.slotMinutes;
@@ -38,9 +43,12 @@ export async function GET(req: NextRequest) {
     const to = addDays(from, 41);
 
     const openings = await Booking.find({
+      ...tenantFilter(tenantId),
       date: { $gte: from, $lte: to },
       status: { $ne: "cancelled" },
-    });
+    })
+      .select("date time duration")
+      .lean();
     const byDate: Record<
       string,
       Array<{ time: string; duration: number }>
@@ -93,7 +101,7 @@ export async function GET(req: NextRequest) {
 
     return Response.json({ days });
   } catch (err) {
-    console.error(err);
-    return Response.json({ error: "Error del servidor" }, { status: 500 });
+    logRequestError("month-availability", id, err);
+    return withRequestId(Response.json({ error: "Error del servidor", requestId: id }, { status: 500 }), id);
   }
 }

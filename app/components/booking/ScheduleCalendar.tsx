@@ -22,6 +22,7 @@ type Props = {
   minDate: string;
   maxDate: string;
   service: string;
+  tenantSlug?: string;
   onSelect: (d: string) => void;
 };
 
@@ -30,6 +31,7 @@ export default function ScheduleCalendar({
   minDate,
   maxDate,
   service,
+  tenantSlug,
   onSelect,
 }: Props) {
   const start = new Date(`${value || minDate}T00:00:00`);
@@ -45,7 +47,7 @@ export default function ScheduleCalendar({
     gridStart.setDate(1 - gridStart.getDay());
     const from = dateStr(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate());
     let cancelled = false;
-    getMonthAvailability(from, service)
+    getMonthAvailability(from, service, tenantSlug)
       .then((data) => {
         if (cancelled) return;
         const map: Record<string, string> = {};
@@ -61,7 +63,7 @@ export default function ScheduleCalendar({
     return () => {
       cancelled = true;
     };
-  }, [display.y, display.m, service]);
+  }, [display.y, display.m, service, tenantSlug]);
 
   const minParts = minDate.split("-").map(Number);
   const maxParts = maxDate.split("-").map(Number);

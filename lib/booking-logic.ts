@@ -62,8 +62,8 @@ export function normalizeWhatsapp(value: string): string {
   return digits;
 }
 
-export async function getSettings() {
-  let doc = await Setting.findOne().select("+pin +pinHash");
+export async function getSettings(tenantId?: string | null) {
+  let doc = await Setting.findOne(tenantId ? { tenantId } : {}).select("+pin +pinHash");
   if (!doc) {
     doc = await Setting.create(defaultSettings());
   } else {
@@ -78,7 +78,11 @@ export async function getSettings() {
     if (normalizedWhatsapp && normalizedWhatsapp !== doc.whatsapp) {
       doc.whatsapp = normalizedWhatsapp;
     }
-    await doc.save();
+    // Las consultas públicas leen la configuración con mucha frecuencia.
+    // Persistimos solo si agregamos defaults o normalizamos un valor existente.
+    if (doc.isModified()) {
+      await doc.save();
+    }
   }
   return doc;
 }
