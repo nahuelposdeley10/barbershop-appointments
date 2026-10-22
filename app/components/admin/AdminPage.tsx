@@ -653,7 +653,7 @@ export default function AdminPage({
         tenantSlug={tenantSlug}
         onLogout={onLogout}
       />
-      <div className="flex flex-col gap-4 max-w-[720px] lg:max-w-5xl w-full mx-auto pt-20 px-3 pb-10 sm:gap-5 sm:pt-24 sm:px-5 sm:pb-16">
+      <div className="flex flex-col gap-4 max-w-[720px] lg:max-w-5xl w-full mx-auto pt-20 px-3 pb-10 sm:gap-5 sm:pt-24 sm:px-5 sm:pb-16 lg:pt-32">
 
         <BarberPole />
 

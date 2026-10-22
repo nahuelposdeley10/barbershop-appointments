@@ -177,59 +177,9 @@ export default function Navbar({
 
           {adminMode ? (
             <div className="flex items-center gap-3">
-              <span className="hidden text-xs font-bold uppercase tracking-[0.16em] text-zinc-500 xl:inline">
+              <span className="hidden text-xs font-bold uppercase tracking-[0.16em] text-zinc-500 lg:inline">
                 Panel de administración
               </span>
-              <div className="hidden items-center gap-1 lg:flex">
-                {panelLinks.map((link) => (
-                  <button
-                    key={link.id}
-                    type="button"
-                    aria-current={adminTab === link.id ? "page" : undefined}
-                    onClick={() => selectPanelTab(link.id)}
-                    className={`whitespace-nowrap rounded-lg px-2.5 py-2 text-xs font-bold transition xl:px-3 xl:text-sm ${
-                      adminTab === link.id
-                        ? "bg-accent text-zinc-950"
-                        : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
-                    }`}
-                  >
-                    {link.label}
-                  </button>
-                ))}
-                {tenantSlug && (
-                  <div className="ml-1 flex items-center gap-1 border-l border-zinc-800 pl-2">
-                    <button
-                      type="button"
-                      onClick={() => copyShareLink("web")}
-                      title="Copiar web pública"
-                      aria-label="Copiar web pública"
-                      className="flex h-9 items-center gap-1.5 rounded-lg px-2 text-xs font-bold text-zinc-400 transition hover:bg-zinc-800 hover:text-accent"
-                    >
-                      {Icons.share}
-                      <span className="hidden 2xl:inline">{copiedShare === "web" ? "Web ✓" : "Web"}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => copyShareLink("booking")}
-                      title="Copiar link de reservas"
-                      aria-label="Copiar link de reservas"
-                      className="flex h-9 items-center gap-1.5 rounded-lg px-2 text-xs font-bold text-zinc-400 transition hover:bg-zinc-800 hover:text-accent"
-                    >
-                      {Icons.share}
-                      <span className="hidden 2xl:inline">{copiedShare === "booking" ? "Reservas ✓" : "Reservas"}</span>
-                    </button>
-                  </div>
-                )}
-                {onLogout && (
-                  <button
-                    type="button"
-                    onClick={onLogout}
-                    className="ml-1 whitespace-nowrap rounded-lg border border-zinc-700/60 px-2.5 py-2 text-xs font-bold text-zinc-400 transition hover:border-red-500/60 hover:text-red-400 xl:px-3 xl:text-sm"
-                  >
-                    Salir
-                  </button>
-                )}
-              </div>
               <button
                 type="button"
                 className="grid h-11 w-11 place-items-center rounded-xl border border-zinc-700/70 text-zinc-300 transition hover:border-accent hover:text-accent lg:hidden"
@@ -289,6 +239,63 @@ export default function Navbar({
           )}
         </div>
       </div>
+
+      {adminMode && (
+        <div className="hidden border-t border-zinc-800/50 lg:block">
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-5 px-4 py-3 sm:px-6 lg:px-8">
+            <div className="flex min-w-0 items-center gap-1.5">
+              {panelLinks.map((link) => (
+                <button
+                  key={link.id}
+                  type="button"
+                  aria-current={adminTab === link.id ? "page" : undefined}
+                  onClick={() => selectPanelTab(link.id)}
+                  className={`whitespace-nowrap rounded-lg px-3 py-2.5 text-sm font-bold transition ${
+                    adminTab === link.id
+                      ? "bg-accent text-zinc-950"
+                      : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                  }`}
+                >
+                  {link.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              {tenantSlug && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => copyShareLink("web")}
+                    title="Copiar web pública"
+                    className="flex h-10 items-center gap-2 rounded-lg border border-zinc-700/70 px-3 text-xs font-bold text-zinc-300 transition hover:border-accent hover:text-accent"
+                  >
+                    {Icons.share}
+                    {copiedShare === "web" ? "Web copiada ✓" : "Compartir web"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => copyShareLink("booking")}
+                    title="Copiar link de reservas"
+                    className="flex h-10 items-center gap-2 rounded-lg border border-zinc-700/70 px-3 text-xs font-bold text-zinc-300 transition hover:border-accent hover:text-accent"
+                  >
+                    {Icons.share}
+                    {copiedShare === "booking" ? "Reservas copiadas ✓" : "Compartir reservas"}
+                  </button>
+                </>
+              )}
+              {onLogout && (
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  className="h-10 rounded-lg border border-zinc-700/60 px-3 text-xs font-bold text-zinc-400 transition hover:border-red-500/60 hover:text-red-400"
+                >
+                  Salir
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {open && adminMode && (
         <div id="admin-panel-menu" className="border-t border-zinc-800/50 lg:hidden">
