@@ -177,12 +177,62 @@ export default function Navbar({
 
           {adminMode ? (
             <div className="flex items-center gap-3">
-              <span className="hidden text-xs font-bold uppercase tracking-[0.16em] text-zinc-500 sm:inline">
+              <span className="hidden text-xs font-bold uppercase tracking-[0.16em] text-zinc-500 xl:inline">
                 Panel de administración
               </span>
+              <div className="hidden items-center gap-1 lg:flex">
+                {panelLinks.map((link) => (
+                  <button
+                    key={link.id}
+                    type="button"
+                    aria-current={adminTab === link.id ? "page" : undefined}
+                    onClick={() => selectPanelTab(link.id)}
+                    className={`whitespace-nowrap rounded-lg px-2.5 py-2 text-xs font-bold transition xl:px-3 xl:text-sm ${
+                      adminTab === link.id
+                        ? "bg-accent text-zinc-950"
+                        : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                    }`}
+                  >
+                    {link.label}
+                  </button>
+                ))}
+                {tenantSlug && (
+                  <div className="ml-1 flex items-center gap-1 border-l border-zinc-800 pl-2">
+                    <button
+                      type="button"
+                      onClick={() => copyShareLink("web")}
+                      title="Copiar web pública"
+                      aria-label="Copiar web pública"
+                      className="flex h-9 items-center gap-1.5 rounded-lg px-2 text-xs font-bold text-zinc-400 transition hover:bg-zinc-800 hover:text-accent"
+                    >
+                      {Icons.share}
+                      <span className="hidden 2xl:inline">{copiedShare === "web" ? "Web ✓" : "Web"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => copyShareLink("booking")}
+                      title="Copiar link de reservas"
+                      aria-label="Copiar link de reservas"
+                      className="flex h-9 items-center gap-1.5 rounded-lg px-2 text-xs font-bold text-zinc-400 transition hover:bg-zinc-800 hover:text-accent"
+                    >
+                      {Icons.share}
+                      <span className="hidden 2xl:inline">{copiedShare === "booking" ? "Reservas ✓" : "Reservas"}</span>
+                    </button>
+                  </div>
+                )}
+                {onLogout && (
+                  <button
+                    type="button"
+                    onClick={onLogout}
+                    className="ml-1 whitespace-nowrap rounded-lg border border-zinc-700/60 px-2.5 py-2 text-xs font-bold text-zinc-400 transition hover:border-red-500/60 hover:text-red-400 xl:px-3 xl:text-sm"
+                  >
+                    Salir
+                  </button>
+                )}
+              </div>
               <button
                 type="button"
-                className="grid h-11 w-11 place-items-center rounded-xl border border-zinc-700/70 text-zinc-300 transition hover:border-accent hover:text-accent"
+                className="grid h-11 w-11 place-items-center rounded-xl border border-zinc-700/70 text-zinc-300 transition hover:border-accent hover:text-accent lg:hidden"
                 aria-label={open ? "Cerrar menú del panel" : "Abrir menú del panel"}
                 aria-expanded={open}
                 aria-controls="admin-panel-menu"
@@ -241,7 +291,7 @@ export default function Navbar({
       </div>
 
       {open && adminMode && (
-        <div id="admin-panel-menu" className="border-t border-zinc-800/50">
+        <div id="admin-panel-menu" className="border-t border-zinc-800/50 lg:hidden">
           <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
             <p className="px-2 text-[11px] font-extrabold uppercase tracking-[0.18em] text-accent">
               Navegación del panel
