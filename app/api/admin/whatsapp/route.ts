@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { connectDB } from "@/lib/db";
 import { getAdminContext } from "@/lib/auth";
 import { getSettings } from "@/lib/booking-logic";
-import { isKapsoConfigured, kapsoCreateCustomer, kapsoCreateSetupLink, kapsoListPhoneNumbers, kapsoListTemplates } from "@/lib/kapso";
+import { isKapsoConfigured, kapsoCreateCustomer, kapsoCreateSetupLink, kapsoListPhoneNumbers, kapsoListTemplates, kapsoSandboxConfig } from "@/lib/kapso";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +17,7 @@ function publicStatus(setting: Record<string, unknown>) {
     templateName: typeof setting.whatsappTemplateName === "string" ? setting.whatsappTemplateName : "",
     templateLanguage: typeof setting.whatsappTemplateLanguage === "string" ? setting.whatsappTemplateLanguage : "es_AR",
     setupLinkAvailable: Boolean(setting.kapsoCustomerId),
+    sandboxAvailable: Boolean(kapsoSandboxConfig()),
     ...(setting.kapsoLastError ? { lastError: String(setting.kapsoLastError).slice(0, 300) } : {}),
     ...(setting.kapsoLastSyncedAt ? { lastSyncedAt: new Date(String(setting.kapsoLastSyncedAt)).toISOString() } : {}),
   };
@@ -106,7 +107,14 @@ export async function POST(req: NextRequest) {
     const connected = phoneNumbers.find((phone) =>
       String(phone.status || "").toLowerCase() === "active" || String(phone.status || "").toLowerCase() === "connected"
     ) || phoneNumbers[0];
-    if (!connected) {
+    const sandbox = kapsoSandboxConfig();
+    if (!connected && sandbox) {
+      setting.kapsoPhoneNumberId = sandbox.phoneNumberId;
+      setting.kapsoBusinessAccountId = sandbox.businessAccountId;
+      setting.kapsoDisplayPhone = "Sandbox WhatsApp";
+      setting.kapsoConnectionStatus = "connected";
+      setting.kapsoLastError = "";
+    } else if (!connected) {
       setting.kapsoConnectionStatus = "pending";
       setting.kapsoLastError = "Todavía no hay un número conectado";
     } else {
@@ -118,16 +126,21 @@ export async function POST(req: NextRequest) {
     }
     setting.kapsoLastSyncedAt = new Date();
     await setting.save();
-    const templates = setting.kapsoBusinessAccountId
-      ? (await kapsoListTemplates(setting.kapsoBusinessAccountId))
+    let templates: { name: string; language: string; status: string; category?: string }[] = [];
+    if (setting.kapsoBusinessAccountId) {
+      try {
+        templates = (await kapsoListTemplates(setting.kapsoBusinessAccountId))
           .filter((template) => String(template.status || "").toUpperCase() === "APPROVED")
           .map((template) => ({
             name: template.name || "",
             language: template.language || "",
             status: template.status || "",
             ...(template.category ? { category: template.category } : {}),
-          }))
-      : [];
+          }));
+      } catch (error) {
+        if (!sandbox) throw error;
+      }
+    }
     return Response.json({ status: publicStatus(setting.toObject()), templates });
   } catch (error) {
     setting.kapsoConnectionStatus = "error";

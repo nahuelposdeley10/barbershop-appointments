@@ -109,6 +109,7 @@ export type WhatsappStatus = {
   templateName: string;
   templateLanguage: string;
   setupLinkAvailable: boolean;
+  sandboxAvailable?: boolean;
   lastError?: string;
   lastSyncedAt?: string;
 };

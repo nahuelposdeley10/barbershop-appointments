@@ -60,6 +60,17 @@ type PhoneNumber = {
 };
 type Template = { name?: string; language?: string; status?: string; category?: string };
 
+export type KapsoSandboxConfig = {
+  phoneNumberId: string;
+  businessAccountId: string;
+};
+
+export function kapsoSandboxConfig(): KapsoSandboxConfig | null {
+  const phoneNumberId = process.env.KAPSO_SANDBOX_PHONE_NUMBER_ID?.trim() || "";
+  const businessAccountId = process.env.KAPSO_SANDBOX_BUSINESS_ACCOUNT_ID?.trim() || "";
+  return phoneNumberId && businessAccountId ? { phoneNumberId, businessAccountId } : null;
+}
+
 function unwrap<T extends object>(value: T | { data?: T }) {
   if (value && typeof value === "object" && "data" in value && value.data) return value.data as T;
   return value as T;
