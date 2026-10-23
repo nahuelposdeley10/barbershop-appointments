@@ -47,6 +47,11 @@ export default function ScheduleCalendar({
     gridStart.setDate(1 - gridStart.getDay());
     const from = dateStr(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate());
     let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setLoading(true);
+      setStatusByDate({});
+    });
     getMonthAvailability(from, service, tenantSlug)
       .then((data) => {
         if (cancelled) return;
@@ -88,7 +93,7 @@ export default function ScheduleCalendar({
   }
 
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className="flex flex-col gap-2.5" aria-busy={loading}>
       <div className="flex items-center justify-between gap-2">
         <button
           type="button"

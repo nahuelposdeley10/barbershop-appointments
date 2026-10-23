@@ -257,6 +257,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
   const didHydrate = useRef(false);
 
   const freeCount = slots.filter((s) => s.free).length;
+  const selectedServiceDetails = services.find((service) => service.name === selectedService);
   const bookingTokensKey = bookings.map((b) => b.manageToken || "").join(",");
 
   useEffect(() => {
@@ -363,12 +364,17 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
       setError("Elegí una fecha y un horario antes de continuar");
       return;
     }
+    if (!termsAccepted) {
+      setError("Aceptá los términos para confirmar el turno");
+      return;
+    }
     if (!name.trim() || phone.trim().length < 6) {
       setError("Ingresá tu nombre y un teléfono válido");
       return;
     }
     setSubmitting(true);
     setError("");
+    persistTermsAccepted();
     try {
       const booking = await createBooking({
         name: name.trim(),
@@ -661,7 +667,12 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
           <h2 className="text-[17px] font-bold">
             <Step n={3} /> Elegí un horario
           </h2>
-          <SelectionSummary service={selectedService} date={formatDate(date)} />
+          <SelectionSummary
+            service={selectedService}
+            date={formatDate(date)}
+            price={selectedServiceDetails?.price}
+            duration={selectedServiceDetails?.duration}
+          />
           {error && <p role="alert" className="text-[var(--red)] font-semibold">{error}</p>}
           {loading ? (
             <p className="text-[var(--muted)]">Cargando horarios…</p>
@@ -781,7 +792,12 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
             <h2 className="text-[17px] font-bold">
               <Step n={4} /> Confirmá tus datos
             </h2>
-            <SelectionSummary service={selectedService} date={`${formatDate(date)} · ${selectedSlot} h`} />
+            <SelectionSummary
+              service={selectedService}
+              date={`${formatDate(date)} · ${selectedSlot} h`}
+              price={selectedServiceDetails?.price}
+              duration={selectedServiceDetails?.duration}
+            />
             {error && <p role="alert" className="text-[var(--red)] font-semibold">{error}</p>}
             <form className="flex flex-col gap-3.5" onSubmit={handleSubmit}>
               <Field label="Nombre">
@@ -803,6 +819,20 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
                   autoComplete="tel"
                 />
               </Field>
+              <label className="flex items-start gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] p-3 text-sm text-[var(--muted)]">
+                <input
+                  type="checkbox"
+                  checked={termsAccepted}
+                  onChange={(event) => {
+                    setTermsAccepted(event.target.checked);
+                    if (event.target.checked) acceptTerms();
+                  }}
+                  className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--accent)]"
+                />
+                <span>
+                  Acepto los términos: dejo mis datos para gestionar la reserva y me comprometo a avisar si no puedo asistir.
+                </span>
+              </label>
               <div className="grid grid-cols-1 sm:flex sm:justify-between gap-2.5">
                 <button
                   type="button"
@@ -825,29 +855,6 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
           </section>
         )}
 
-        {/* Términos: solo al inicio del flujo y hasta que se aceptan una vez */}
-        {!termsAccepted && step === 1 && (
-          <section
-            aria-labelledby="terminos-titulo"
-            className="rounded-[22px] sm:rounded-2xl border border-[var(--border)] bg-[var(--card)]/70 p-4 sm:p-[22px] flex flex-col gap-3 sm:gap-3.5"
-          >
-            <h2 id="terminos-titulo" className="text-[15px] sm:text-[17px] font-bold">
-              Términos y condiciones
-            </h2>
-            <ul className="list-disc pl-5 flex flex-col gap-1.5 text-[13px] sm:text-sm text-[var(--muted)]">
-              <li>El turno queda a nombre del nombre y teléfono que dejes en el formulario.</li>
-              <li>Llegá 5 minutos antes. Si no podés asistir, cancelá el turno desde esta misma página.</li>
-              <li>Usamos tus datos solo para gestionar la reserva y avisarte si hace falta.</li>
-            </ul>
-            <button
-              type="button"
-              onClick={acceptTerms}
-              className="w-full sm:w-auto sm:self-start px-5 py-2.5 rounded-xl font-bold text-sm border border-accent/40 text-accent hover:bg-accent/10"
-            >
-              Acepto los términos
-            </button>
-          </section>
-        )}
       </div>
     </div>
   );
@@ -879,7 +886,7 @@ function BookingProgress({ step }: { step: 1 | 2 | 3 | 4 }) {
           >
             {item.n < step ? "✓" : item.n}
           </span>
-          <span className={`text-[10px] sm:text-[12px] font-bold truncate max-w-full ${item.n === step ? "text-[var(--text)]" : "text-[var(--muted)]"}`}>
+          <span className={`text-[11px] sm:text-[12px] font-bold truncate max-w-full ${item.n === step ? "text-[var(--text)]" : "text-[var(--muted)]"}`}>
             {item.label}
           </span>
         </div>
@@ -889,12 +896,32 @@ function BookingProgress({ step }: { step: 1 | 2 | 3 | 4 }) {
   );
 }
 
-function SelectionSummary({ service, date }: { service: string; date: string }) {
+function SelectionSummary({
+  service,
+  date,
+  price,
+  duration,
+}: {
+  service: string;
+  date: string;
+  price?: number;
+  duration?: number;
+}) {
   return (
     <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--muted)]">
       <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--bg-soft)] border border-[var(--border)] px-3 py-1.5">
         <strong className="text-[var(--text)]">{service}</strong>
       </span>
+      {typeof duration === "number" && (
+        <span className="rounded-full border border-[var(--border)] bg-[var(--bg-soft)] px-3 py-1.5">
+          {duration} min
+        </span>
+      )}
+      {typeof price === "number" && (
+        <span className="rounded-full border border-accent/30 bg-accent/10 px-3 py-1.5 font-bold text-accent">
+          {currency(price)}
+        </span>
+      )}
       <span className="text-[var(--muted)]">·</span>
       <span>{date}</span>
     </div>
@@ -965,7 +992,7 @@ function TurnoCard({
             {dayShort} · {booking.time} h
           </span>
           <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] sm:text-xs font-bold text-emerald-400">
-            <i className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-400" /> Activo
+            <i className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-400" /> Confirmado
           </span>
         </span>
       </div>
@@ -973,9 +1000,10 @@ function TurnoCard({
         type="button"
         onClick={onCancel}
         disabled={disabled || cancelling}
-        className="w-auto shrink-0 whitespace-nowrap px-3 sm:px-4 py-2 rounded-xl font-bold text-[12.5px] sm:text-sm text-red-300 border border-red-500/30 hover:bg-red-500/10 disabled:opacity-60"
+        aria-label={`Cancelar turno de ${booking.service} del ${dayShort} a las ${booking.time}`}
+        className="min-h-11 w-auto shrink-0 whitespace-nowrap px-3 sm:px-4 py-2 rounded-xl font-bold text-[12.5px] sm:text-sm text-red-300 border border-red-500/30 hover:bg-red-500/10 disabled:opacity-60"
       >
-        {cancelling ? "Cancelando…" : "Cancelar"}
+        {cancelling ? "Cancelando…" : "Cancelar turno"}
       </button>
     </li>
   );

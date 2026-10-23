@@ -41,6 +41,16 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  overflow-x: hidden;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }
 
 ::selection {
@@ -106,6 +116,10 @@ input[type="time"] {
   border-color: var(--accent);
 }
 
+.input:focus-visible {
+  box-shadow: 0 0 0 3px rgba(212, 168, 83, 0.16);
+}
+
 .input-time {
   flex: 0 1 84px;
   min-width: 0;
@@ -122,6 +136,10 @@ input[type="time"] {
 .input-time:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+.input-time:focus-visible {
+  box-shadow: 0 0 0 3px rgba(212, 168, 83, 0.16);
 }
 
 .input-time:disabled {
@@ -170,5 +188,19 @@ input[type="time"] {
 @media (max-width: 640px) {
   .booking-bg {
     padding: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

@@ -28,7 +28,7 @@ const MONTH_NAMES = [
 ];
 
 const STATUS_LABELS: Record<string, string> = {
-  confirmed: "Activo",
+  confirmed: "Confirmado",
   cancelled: "Cancelado",
   done: "Completado",
 };
@@ -201,22 +201,17 @@ function RevenueCard({
       </div>
       <div className="mt-5 flex items-end justify-between gap-3">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--muted)]">Total estimado</p>
-          <p className="mt-1 text-[26px] font-black tracking-tight text-[var(--text)]">{formatMoney(period.total)}</p>
+          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-emerald-300">Cobrado</p>
+          <p className="mt-1 text-[28px] font-black tracking-tight text-[var(--text)]">{formatMoney(period.collected)}</p>
         </div>
         <span className="mb-1 shrink-0 rounded-full bg-[var(--card-2)] px-2.5 py-1 text-[11px] font-bold text-[var(--muted)]">
           {period.appointmentCount} {period.appointmentCount === 1 ? "turno" : "turnos"}
         </span>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[var(--border)] pt-3 text-xs">
-        <div className="rounded-xl bg-emerald-400/[0.06] p-2.5">
-          <p className="flex items-center gap-1.5 text-[var(--muted)]">
-            <span className="grid h-4 w-4 place-items-center rounded-full bg-emerald-400/15 text-emerald-300" aria-hidden="true">
-              <svg width="10" height="10" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.704 5.29a1 1 0 0 1 .006 1.414l-7.25 7.333a1 1 0 0 1-1.42.006L3.29 9.293a1 1 0 0 1 1.42-1.406l4.04 4.081 6.54-6.61a1 1 0 0 1 1.414-.068Z" clipRule="evenodd" /></svg>
-            </span>
-            Cobrado
-          </p>
-          <p className="mt-1 font-bold text-emerald-300">{formatMoney(period.collected)}</p>
+        <div className="rounded-xl bg-[var(--card-2)] p-2.5">
+          <p className="text-[var(--muted)]">Total estimado</p>
+          <p className="mt-1 font-bold text-[var(--text)]">{formatMoney(period.total)}</p>
         </div>
         <div className="rounded-xl bg-amber-300/[0.06] p-2.5">
           <p className="flex items-center gap-1.5 text-[var(--muted)]">
@@ -274,6 +269,8 @@ export default function AdminPage({
   const [status, setStatus] = useState("");
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
   const statusMenuRef = useRef<HTMLDivElement>(null);
+  const datePickerRef = useRef<HTMLDivElement>(null);
+  const agendaMessageTimerRef = useRef<number | null>(null);
   const [search, setSearch] = useState("");
   const [manualBookingOpen, setManualBookingOpen] = useState(false);
   const [manualBookingForm, setManualBookingForm] = useState({
@@ -431,6 +428,43 @@ export default function AdminPage({
     };
   }, [statusMenuOpen]);
 
+  useEffect(() => {
+    if (!datePickerOpen) return;
+    function handlePointerDown(event: PointerEvent) {
+      if (!datePickerRef.current?.contains(event.target as Node)) {
+        setDatePickerOpen(false);
+      }
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setDatePickerOpen(false);
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [datePickerOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (agendaMessageTimerRef.current !== null) {
+        window.clearTimeout(agendaMessageTimerRef.current);
+      }
+    };
+  }, []);
+
+  function showAgendaMessage(message: string) {
+    setAgendaMessage(message);
+    if (agendaMessageTimerRef.current !== null) {
+      window.clearTimeout(agendaMessageTimerRef.current);
+    }
+    agendaMessageTimerRef.current = window.setTimeout(() => {
+      setAgendaMessage("");
+      agendaMessageTimerRef.current = null;
+    }, 4200);
+  }
+
   async function changeStatus(id: string, newStatus: string) {
     setError("");
     try {
@@ -442,6 +476,7 @@ export default function AdminPage({
       const list = await adminGetBookings(token, { date, status: status || undefined });
       setBookings(list);
       setRevenueRefresh((value) => value + 1);
+      showAgendaMessage(newStatus === "done" ? "Turno marcado como completado y sumado a cobrado." : "Estado del turno actualizado.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error inesperado");
     }
@@ -564,6 +599,8 @@ export default function AdminPage({
   function selectStatus(nextStatus: string) {
     setLoading(true);
     setStatus(nextStatus);
+    setPage(1);
+    setExpandedBookingId(null);
   }
 
   function removeBooking(booking: AdminBooking) {
@@ -586,6 +623,7 @@ export default function AdminPage({
       setBookings(list);
       setRevenueRefresh((value) => value + 1);
       setBookingToDelete(null);
+      showAgendaMessage("Turno anulado correctamente. El horario quedó libre.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error inesperado");
     } finally {
@@ -849,7 +887,7 @@ export default function AdminPage({
     },
     {
       value: "confirmed",
-      label: plural(stats.confirmed, "activo"),
+      label: plural(stats.confirmed, "confirmado"),
       color: "text-blue-400",
       dot: "bg-blue-400",
       active: "bg-blue-400/[0.10]",
@@ -911,9 +949,27 @@ export default function AdminPage({
         tenantSlug={tenantSlug}
         onLogout={onLogout}
       />
-      <div className="flex flex-col gap-4 max-w-[720px] lg:max-w-5xl w-full mx-auto pt-20 px-3 pb-10 sm:gap-5 sm:pt-24 sm:px-5 sm:pb-16 lg:pt-32">
+      <div className="flex flex-col gap-4 max-w-[720px] lg:max-w-5xl w-full mx-auto pt-20 px-3 pb-10 sm:gap-5 sm:pt-24 sm:px-5 sm:pb-16 lg:pt-28">
 
-        <BarberPole />
+        {role === "owner" && (
+          <header className="rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-4 sm:px-5 sm:py-5">
+            <div className="flex items-center gap-3">
+              <BarberPole className="w-12 h-[5px] shrink-0 opacity-80" />
+              <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-accent">Panel del barbero</p>
+            </div>
+            <div className="mt-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+              <div>
+                <h1 className="text-2xl font-black tracking-tight text-[var(--text)] sm:text-3xl">
+                  {tab === "agenda" ? "Agenda de turnos" : tab === "resumen" ? "Resumen financiero" : tab === "config" ? "Configuración" : tab === "imagenes" ? "Imágenes" : "Sitio web"}
+                </h1>
+                <p className="mt-1 text-sm text-[var(--muted)]">
+                  {tab === "agenda" ? "Mirá qué turno sigue y actualizá cada servicio en segundos." : "Administrá tu barbería desde un solo lugar."}
+                </p>
+              </div>
+              {tab === "agenda" && <span className="text-xs font-bold text-[var(--muted)]">{formatDate(date)}</span>}
+            </div>
+          </header>
+        )}
 
         {isImpersonating && role === "owner" && (
           <section className="flex flex-col gap-3 rounded-2xl border border-accent/35 bg-accent/[0.09] p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5" role="status">
@@ -1076,7 +1132,7 @@ export default function AdminPage({
                 <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-accent">Resumen financiero</p>
                 <h2 className="mt-1 text-xl font-bold">Ingresos de tu barbería</h2>
               </div>
-              <p className="text-xs text-[var(--muted)]">Cancelados no cuentan · completados = cobrado</p>
+              <p className="text-xs text-[var(--muted)]">Cobrado = turnos completados · cancelados no cuentan</p>
             </div>
             {revenueLoading ? (
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -1131,19 +1187,50 @@ export default function AdminPage({
 
         {tab === "agenda" && role === "owner" && (
           <>
-            <section className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 sm:p-[22px]">
+            {nextBooking && status === "" && (
+              <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-accent/30 bg-accent/[0.08] px-4 py-3.5 sm:px-5" aria-label="Próximo turno">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent/15 text-accent" aria-hidden="true">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
+                    </svg>
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-accent">Próximo turno</p>
+                    <p className="mt-1 truncate text-[15px] font-bold">{nextBooking.time} · {nextBooking.name}</p>
+                    <p className="text-[13px] text-[var(--muted)]">{nextBooking.service} · {nextBooking.duration} min</p>
+                  </div>
+                </div>
+                <span className="st confirmed">Confirmado</span>
+              </section>
+            )}
+
+            <section aria-label="Buscar y filtrar turnos" className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 sm:p-[22px]">
+              <div className="flex items-start justify-between gap-3 sm:w-full">
+                <div>
+                  <p className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-accent">Buscar y filtrar</p>
+                  <p className="mt-1 text-xs text-[var(--muted)]">
+                    {plural(visibleBookings.length, "turno")} para {formatDate(date)}
+                  </p>
+                </div>
+                <span className="st confirmed sm:hidden">{selectedStatus.label}</span>
+              </div>
               <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2 sm:contents">
                 <Field label="Buscar" className="min-w-0 sm:min-w-[200px] sm:flex-1">
                   <input
                     className="input"
                     value={search}
-                    onChange={(event) => setSearch(event.target.value)}
+                    onChange={(event) => {
+                      setSearch(event.target.value);
+                      setPage(1);
+                    }}
                     placeholder="Nombre, teléfono o servicio"
+                    aria-label="Buscar por nombre, teléfono o servicio"
                     type="search"
                   />
                 </Field>
                 <div ref={statusMenuRef} className="relative min-w-0 sm:hidden">
-                  <span className="mb-1.5 block text-sm font-semibold">Estado</span>
+                  <span className="mb-1.5 block text-sm font-semibold">Filtros</span>
                   <button
                     type="button"
                     aria-haspopup="menu"
@@ -1213,6 +1300,32 @@ export default function AdminPage({
               >
                 + Registrar servicio
               </button>
+              <div className="hidden flex-wrap gap-2 border-t border-[var(--border)] pt-3 sm:flex sm:w-full sm:pt-3">
+                <Stat
+                  cls="text-[var(--text)] border-[var(--border)]"
+                  label={status === "" ? `Todos (${bookings.length})` : "Todos"}
+                  active={status === ""}
+                  onClick={() => selectStatus("")}
+                />
+                <Stat
+                  cls="text-blue-400 border-blue-400/40"
+                  label={plural(stats.confirmed, "confirmado")}
+                  active={status === "confirmed"}
+                  onClick={() => selectStatus(status === "confirmed" ? "" : "confirmed")}
+                />
+                <Stat
+                  cls="text-emerald-400 border-emerald-400/40"
+                  label={plural(stats.done, "completado")}
+                  active={status === "done"}
+                  onClick={() => selectStatus(status === "done" ? "" : "done")}
+                />
+                <Stat
+                  cls="text-[var(--muted)] border-[var(--muted)]/40"
+                  label={plural(stats.cancelled, "cancelado")}
+                  active={status === "cancelled"}
+                  onClick={() => selectStatus(status === "cancelled" ? "" : "cancelled")}
+                />
+              </div>
             </section>
 
             {agendaMessage && (
@@ -1221,46 +1334,8 @@ export default function AdminPage({
               </p>
             )}
 
-            <div className="hidden flex-wrap gap-2 pb-1 sm:flex sm:pb-0">
-              <Stat
-                cls="text-[var(--text)] border-[var(--border)]"
-                label={status === "" ? `Todos (${bookings.length})` : "Todos"}
-                active={status === ""}
-                onClick={() => selectStatus("")}
-              />
-              <Stat
-                cls="text-blue-400 border-blue-400/40"
-                label={plural(stats.confirmed, "activo")}
-                active={status === "confirmed"}
-                onClick={() => selectStatus(status === "confirmed" ? "" : "confirmed")}
-              />
-              <Stat
-                cls="text-emerald-400 border-emerald-400/40"
-                label={plural(stats.done, "completado")}
-                active={status === "done"}
-                onClick={() => selectStatus(status === "done" ? "" : "done")}
-              />
-              <Stat
-                cls="text-[var(--muted)] border-[var(--muted)]/40"
-                label={plural(stats.cancelled, "cancelado")}
-                active={status === "cancelled"}
-                onClick={() => selectStatus(status === "cancelled" ? "" : "cancelled")}
-              />
-            </div>
-
-            {nextBooking && (
-              <section className="rounded-2xl border border-accent/30 bg-accent/[0.08] px-4 py-3.5 sm:px-5 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.16em] font-extrabold text-accent">Siguiente turno</p>
-                  <p className="font-bold text-[15px] mt-1">{nextBooking.time} · {nextBooking.name}</p>
-                  <p className="text-[13px] text-[var(--muted)]">{nextBooking.service} · {nextBooking.duration} min</p>
-                </div>
-                <span className="st confirmed">Activo</span>
-              </section>
-            )}
-
             <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 sm:p-[22px] flex flex-col gap-3.5">
-              <div className="relative flex items-center justify-center gap-2 border-b border-[var(--border)] pb-3">
+              <div ref={datePickerRef} className="sticky top-[4.5rem] z-20 relative flex items-center justify-center gap-2 border-b border-[var(--border)] bg-[var(--card)]/95 pb-3 backdrop-blur sm:top-[5.5rem] lg:top-[8.5rem]">
                 <button
                   type="button"
                   aria-label="Ver día anterior"
@@ -1322,11 +1397,53 @@ export default function AdminPage({
                 )}
               </div>
               {loading ? (
-                <p className="text-[var(--muted)]">Cargando turnos…</p>
+                <div className="grid gap-2" aria-label="Cargando turnos">
+                  <div className="h-16 animate-pulse rounded-2xl bg-[var(--bg-soft)]" />
+                  <div className="h-16 animate-pulse rounded-2xl bg-[var(--bg-soft)]" />
+                </div>
               ) : visibleBookings.length === 0 ? (
-                <p className="text-[var(--muted)] bg-[var(--bg-soft)] border border-dashed border-[var(--border)] rounded-xl p-5 text-center">
-                  No hay turnos para esta selección.
-                </p>
+                <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--bg-soft)] p-5 text-center">
+                  {search.trim() ? (
+                    <>
+                      <p className="font-bold text-[var(--text)]">No encontramos ese turno.</p>
+                      <p className="mt-1 text-sm text-[var(--muted)]">Probá con otro nombre, teléfono o servicio.</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearch("");
+                          setPage(1);
+                        }}
+                        className="mt-4 min-h-11 rounded-xl border border-accent/40 px-4 py-2.5 text-sm font-bold text-accent transition hover:bg-accent/10"
+                      >
+                        Limpiar búsqueda
+                      </button>
+                    </>
+                  ) : status ? (
+                    <>
+                      <p className="font-bold text-[var(--text)]">No hay turnos {STATUS_LABELS[status]?.toLowerCase()}.</p>
+                      <p className="mt-1 text-sm text-[var(--muted)]">Probá con otro estado o volvé a ver todos.</p>
+                      <button
+                        type="button"
+                        onClick={() => selectStatus("")}
+                        className="mt-4 min-h-11 rounded-xl border border-accent/40 px-4 py-2.5 text-sm font-bold text-accent transition hover:bg-accent/10"
+                      >
+                        Ver todos los turnos
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-bold text-[var(--text)]">No hay turnos para esta selección.</p>
+                      <p className="mt-1 text-sm text-[var(--muted)]">Podés registrar un servicio hecho sin reserva.</p>
+                      <button
+                        type="button"
+                        onClick={openManualBooking}
+                        className="mt-4 min-h-11 rounded-xl bg-accent px-4 py-2.5 text-sm font-bold text-zinc-950 transition hover:bg-accent-hover"
+                      >
+                        Registrar servicio
+                      </button>
+                    </>
+                  )}
+                </div>
               ) : (
                 <ul className="m-0 grid list-none grid-cols-1 gap-2 p-0">
                   {paginatedBookings.map((b) => {
@@ -1357,7 +1474,7 @@ export default function AdminPage({
                             <span className="flex min-w-0 items-center gap-2">
                               <strong className="min-w-0 truncate text-sm sm:text-[15px]">{b.name}</strong>
                               <span className={`st hidden shrink-0 sm:inline-flex ${statusClass(b.status)}`}>
-                                {STATUS_LABELS[b.status] || "Activo"}
+                                {STATUS_LABELS[b.status] || "Confirmado"}
                               </span>
                             </span>
                             <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[12px] text-[var(--muted)] sm:text-[13px]">
@@ -1367,7 +1484,7 @@ export default function AdminPage({
                             </span>
                           </span>
                           <span className="hidden shrink-0 text-sm font-extrabold text-accent sm:block">{formatMoney(Number(b.price || 0))}</span>
-                          <span className={`st shrink-0 sm:hidden ${statusClass(b.status)}`}>{STATUS_LABELS[b.status] || "Activo"}</span>
+                          <span className={`st shrink-0 sm:hidden ${statusClass(b.status)}`}>{STATUS_LABELS[b.status] || "Confirmado"}</span>
                           <svg
                             width="18"
                             height="18"
@@ -1419,21 +1536,12 @@ export default function AdminPage({
                               {b.status !== "cancelled" && b.status !== "done" && (
                                 <>
                                   <SmallBtn
-                                    cls="flex-1 bg-blue-500/12 text-blue-400 border-blue-500/40 sm:flex-none"
+                                    cls="flex-1 bg-accent text-zinc-950 border-accent hover:bg-accent-hover sm:flex-none"
                                     onClick={() => changeStatus(b._id, "done")}
                                   >
                                     <span className="inline-flex items-center gap-1.5">
                                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg>
-                                      Completado
-                                    </span>
-                                  </SmallBtn>
-                                  <SmallBtn
-                                    cls="flex-1 bg-[var(--card-2)] text-[var(--muted)] border-[var(--border)] sm:flex-none"
-                                    onClick={() => changeStatus(b._id, "cancelled")}
-                                  >
-                                    <span className="inline-flex items-center gap-1.5">
-                                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
-                                      Cancelar
+                                      Marcar como completado
                                     </span>
                                   </SmallBtn>
                                   <SmallBtn
@@ -1442,7 +1550,7 @@ export default function AdminPage({
                                   >
                                     <span className="inline-flex items-center gap-1.5">
                                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></svg>
-                                      Anular reserva
+                                      Anular turno
                                     </span>
                                   </SmallBtn>
                                 </>
