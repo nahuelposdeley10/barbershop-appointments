@@ -293,6 +293,14 @@ async function sanitizeSettings(doc: Record<string, unknown>, userId?: string) {
   const plain = typeof candidate.toObject === "function" ? candidate.toObject() : { ...doc };
   delete plain.pin;
   delete plain.pinHash;
+  delete plain.kapsoCustomerId;
+  delete plain.kapsoSetupLinkId;
+  delete plain.kapsoPhoneNumberId;
+  delete plain.kapsoBusinessAccountId;
+  delete plain.kapsoDisplayPhone;
+  delete plain.kapsoConnectionStatus;
+  delete plain.kapsoLastSyncedAt;
+  delete plain.kapsoLastError;
   const account = await getAdminAccount(userId);
   return { ...plain, adminEmail: account.email, adminPassword: "" };
 }

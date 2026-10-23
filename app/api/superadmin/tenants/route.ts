@@ -21,7 +21,18 @@ export async function GET(req: NextRequest) {
   if (context.role !== "superadmin") return Response.json({ error: "Solo disponible para superadmin" }, { status: 403 });
   await connectDB();
   const tenants = await Tenant.find().populate("ownerId", "email").sort({ createdAt: 1 }).lean();
-  return Response.json(tenants);
+  const tenantIds = tenants.map((tenant) => tenant._id);
+  const settings = await Setting.find({ tenantId: { $in: tenantIds } })
+    .select("tenantId whatsappRemindersEnabled kapsoConnectionStatus")
+    .lean();
+  const settingsByTenant = new Map(settings.map((setting) => [String(setting.tenantId), setting]));
+  return Response.json(
+    tenants.map((tenant) => ({
+      ...tenant,
+      whatsappRemindersEnabled: Boolean(settingsByTenant.get(String(tenant._id))?.whatsappRemindersEnabled),
+      whatsappConnectionStatus: settingsByTenant.get(String(tenant._id))?.kapsoConnectionStatus || "disabled",
+    }))
+  );
 }
 
 export async function POST(req: NextRequest) {
@@ -29,7 +40,7 @@ export async function POST(req: NextRequest) {
   if (!context) return Response.json({ error: "No autorizado" }, { status: 401 });
   if (context.role !== "superadmin") return Response.json({ error: "Solo disponible para superadmin" }, { status: 403 });
 
-  let body: { name?: string; slug?: string; ownerEmail?: string; ownerPassword?: string } = {};
+  let body: { name?: string; slug?: string; ownerEmail?: string; ownerPassword?: string; whatsappRemindersEnabled?: boolean } = {};
   try {
     body = await req.json();
   } catch {
@@ -60,7 +71,12 @@ export async function POST(req: NextRequest) {
         { session }
       );
       await AdminUser.updateOne({ _id: owner._id }, { $set: { tenantId: tenant._id } }, { session });
-      await Setting.create([{ tenantId: tenant._id, ...defaultSettings(), barberName: name }], { session });
+      await Setting.create([{
+        tenantId: tenant._id,
+        ...defaultSettings(),
+        barberName: name,
+        whatsappRemindersEnabled: Boolean(body.whatsappRemindersEnabled),
+      }], { session });
       created = { id: String(tenant._id), slug: tenant.slug, name: tenant.name, ownerEmail };
     });
     return Response.json(created, { status: 201 });

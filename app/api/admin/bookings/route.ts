@@ -9,6 +9,7 @@ import {
   toMinutes,
   weekdayForDate,
   overlaps,
+  normalizeWhatsapp,
 } from "@/lib/booking-logic";
 import { getAdminContext } from "@/lib/auth";
 import { Booking } from "@/lib/models/Booking";
@@ -42,7 +43,7 @@ export async function POST(req: NextRequest) {
     }
 
     const cleanName = typeof body.name === "string" ? body.name.trim() : "";
-    const cleanPhone = typeof body.phone === "string" ? body.phone.replace(/[^\d]/g, "") : "";
+    const cleanPhone = typeof body.phone === "string" ? normalizeWhatsapp(body.phone) : "";
     const cleanService = typeof body.service === "string" ? body.service.trim() : "";
     const cleanDate = typeof body.date === "string" ? normalizeDate(body.date) : null;
     const cleanTime = typeof body.time === "string" ? body.time.trim() : "";

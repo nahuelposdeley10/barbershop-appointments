@@ -44,7 +44,7 @@ const links = [
   { label: "Ubicación", href: "/#ubicacion" },
 ];
 
-export type AdminPanelTab = "agenda" | "resumen" | "config" | "web" | "imagenes" | "superadmin";
+export type AdminPanelTab = "agenda" | "resumen" | "config" | "web" | "imagenes" | "whatsapp" | "superadmin";
 
 const ownerPanelLinks: { id: AdminPanelTab; label: string }[] = [
   { id: "agenda", label: "Agenda de turnos" },
@@ -67,6 +67,7 @@ export default function Navbar({
   adminTab = "agenda",
   onAdminTabChange,
   tenantSlug,
+  whatsappEnabled = false,
 }: {
   nombre: string;
   logo?: string;
@@ -76,6 +77,7 @@ export default function Navbar({
   adminTab?: AdminPanelTab;
   onAdminTabChange?: (tab: AdminPanelTab) => void;
   tenantSlug?: string | null;
+  whatsappEnabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [copiedShare, setCopiedShare] = useState<"web" | "booking" | null>(null);
@@ -103,7 +105,11 @@ export default function Navbar({
     };
   }, [open]);
 
-  const panelLinks = adminRole === "superadmin" ? superadminPanelLinks : ownerPanelLinks;
+  const panelLinks = adminRole === "superadmin"
+    ? superadminPanelLinks
+    : whatsappEnabled
+      ? [...ownerPanelLinks.slice(0, 3), { id: "whatsapp" as const, label: "WhatsApp" }, ...ownerPanelLinks.slice(3)]
+      : ownerPanelLinks;
   const publicHomeUrl = tenantSlug ? `/b/${tenantSlug}` : "/#hero";
   const reservationUrl = tenantSlug ? `/b/${tenantSlug}/reservar` : "/reservar";
   const publicLinks = links.map((link) => ({

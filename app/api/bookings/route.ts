@@ -5,6 +5,7 @@ import {
   getSettings,
   isValidTime,
   normalizeDate,
+  normalizeWhatsapp,
   localDateStr,
   localMinutes,
   toMinutes,
@@ -37,6 +38,7 @@ export async function POST(req: NextRequest) {
       service?: string;
       date?: string;
       time?: string;
+      whatsappOptIn?: boolean;
       website?: string;
     } = {};
     try {
@@ -49,7 +51,7 @@ export async function POST(req: NextRequest) {
     }
     const { name, phone, service, date, time } = body || {};
     const cleanName = typeof name === "string" ? name.trim() : "";
-    const cleanPhone = typeof phone === "string" ? phone.replace(/[^\d]/g, "") : "";
+    const cleanPhone = typeof phone === "string" ? normalizeWhatsapp(phone) : "";
     const cleanService = typeof service === "string" ? service.trim() : "";
     const cleanTime = typeof time === "string" ? time.trim() : "";
     if (!cleanName || !cleanPhone || !cleanService || !date || !cleanTime) {
@@ -159,6 +161,7 @@ export async function POST(req: NextRequest) {
             paymentStatus: "pending",
             ...(tenantId ? { tenantId } : {}),
             manageTokenHash: manageToken.hash,
+            whatsappOptIn: Boolean(body.whatsappOptIn && settings.whatsappRemindersEnabled),
           }],
           { session }
         );
