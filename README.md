@@ -41,7 +41,7 @@ Copiá `.env.example` como `.env.local` y configurá `MONGODB_URI`, `ADMIN_SESSI
 
 ### Recordatorios por WhatsApp
 
-La función se habilita únicamente desde el superadmin para cada barbería. Para conectar Kapso en producción, cargá `KAPSO_API_KEY` y un `CRON_SECRET` privado en Vercel. El cron de Vercel consulta cada cinco minutos `/api/cron/whatsapp-reminders`. Cada cliente debe aceptar explícitamente el recordatorio durante la reserva y la barbería debe usar una plantilla aprobada por WhatsApp Business.
+La función se habilita únicamente desde el superadmin para cada barbería. Para conectar Kapso en producción, cargá `KAPSO_API_KEY` y un `CRON_SECRET` privado en Vercel. La ruta protegida `/api/cron/whatsapp-reminders` queda disponible para un scheduler externo o para Vercel Pro. En el plan Hobby no se registra un cron de Vercel porque solo permite ejecuciones diarias, lo que no alcanza para recordatorios de 30 o 60 minutos. Cada cliente debe aceptar explícitamente el recordatorio durante la reserva y la barbería debe usar una plantilla aprobada por WhatsApp Business.
 
 ```bash
 npm run dev
