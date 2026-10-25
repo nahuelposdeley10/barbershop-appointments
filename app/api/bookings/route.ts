@@ -38,7 +38,6 @@ export async function POST(req: NextRequest) {
       service?: string;
       date?: string;
       time?: string;
-      whatsappOptIn?: boolean;
       website?: string;
     } = {};
     try {
@@ -161,7 +160,6 @@ export async function POST(req: NextRequest) {
             paymentStatus: "pending",
             ...(tenantId ? { tenantId } : {}),
             manageTokenHash: manageToken.hash,
-            whatsappOptIn: Boolean(body.whatsappOptIn && settings.whatsappRemindersEnabled),
           }],
           { session }
         );

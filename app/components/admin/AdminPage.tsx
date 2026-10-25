@@ -10,19 +10,12 @@ import {
   adminUpdateBooking,
   adminUpdateSettings,
   adminUploadImage,
-  adminCreateWhatsappSetup,
-  adminGetWhatsapp,
-  adminSaveWhatsapp,
-  adminSyncWhatsapp,
   superadminCreateTenant,
   superadminGetTenants,
-  superadminUpdateTenant,
   AdminBooking,
   AdminRevenue,
   SuperadminTenant,
   Settings,
-  WhatsappStatus,
-  WhatsappTemplate,
 } from "@/lib/client-api";
 import { BarberPole, ServiceIcon } from "../booking/BarberIcons";
 import Navbar, { type AdminPanelTab } from "../Navbar";
@@ -258,7 +251,7 @@ export default function AdminPage({
     if (role === "superadmin") return "superadmin";
     if (typeof window !== "undefined") {
       const saved = window.sessionStorage.getItem("adminTab");
-      if (saved === "config" || saved === "web" || saved === "imagenes" || saved === "agenda" || saved === "resumen" || saved === "whatsapp") {
+      if (saved === "config" || saved === "web" || saved === "imagenes" || saved === "agenda" || saved === "resumen") {
         return saved;
       }
     }
@@ -310,7 +303,7 @@ export default function AdminPage({
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [tenants, setTenants] = useState<SuperadminTenant[]>([]);
-  const [tenantForm, setTenantForm] = useState({ name: "", slug: "", ownerEmail: "", ownerPassword: "", whatsappRemindersEnabled: false });
+  const [tenantForm, setTenantForm] = useState({ name: "", slug: "", ownerEmail: "", ownerPassword: "" });
   const [tenantModalOpen, setTenantModalOpen] = useState(false);
   const [creatingTenant, setCreatingTenant] = useState(false);
   const [tenantMessage, setTenantMessage] = useState("");
@@ -319,14 +312,6 @@ export default function AdminPage({
   const [leavingTenant, setLeavingTenant] = useState(false);
   const [bookingToDelete, setBookingToDelete] = useState<{ id: string; name: string; service: string; date: string; time: string } | null>(null);
   const [deletingBooking, setDeletingBooking] = useState(false);
-  const [whatsappStatus, setWhatsappStatus] = useState<WhatsappStatus | null>(null);
-  const [whatsappTemplates, setWhatsappTemplates] = useState<WhatsappTemplate[]>([]);
-  const [whatsappLoading, setWhatsappLoading] = useState(false);
-  const [whatsappSaving, setWhatsappSaving] = useState(false);
-  const [whatsappMessage, setWhatsappMessage] = useState("");
-  const [whatsappForm, setWhatsappForm] = useState({ reminderMinutes: 60 as 30 | 60, templateName: "", templateLanguage: "es_AR" });
-  const [tenantEditTarget, setTenantEditTarget] = useState<SuperadminTenant | null>(null);
-  const [updatingTenant, setUpdatingTenant] = useState(false);
 
   useEffect(() => {
     window.sessionStorage.setItem("adminTab", tab);
@@ -335,7 +320,7 @@ export default function AdminPage({
   useEffect(() => {
     if (!tenantModalOpen) return;
     function handleKeyDown(event: KeyboardEvent) {
-    if (event.key === "Escape" && !creatingTenant && !updatingTenant) setTenantModalOpen(false);
+    if (event.key === "Escape" && !creatingTenant) setTenantModalOpen(false);
     }
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -344,7 +329,7 @@ export default function AdminPage({
       document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [tenantModalOpen, creatingTenant, updatingTenant]);
+  }, [tenantModalOpen, creatingTenant]);
 
   useEffect(() => {
     if (!manualBookingOpen) return;
@@ -365,7 +350,6 @@ export default function AdminPage({
     adminGetSettings(token)
       .then((s) => {
         setSettings(s);
-        if (!s.whatsappRemindersEnabled && window.sessionStorage.getItem("adminTab") === "whatsapp") setTab("agenda");
         setDraft(JSON.parse(JSON.stringify(s)));
         setBarberosInput(String(s.cantidadBarberos ?? 1));
         setSlotMinutesInput(String(s.slotMinutes ?? 30));
@@ -425,21 +409,6 @@ export default function AdminPage({
       .then(setTenants)
       .catch((e) => setError(e instanceof Error ? e.message : "No pudimos cargar las barberías"));
   }, [token, role, tab]);
-
-  useEffect(() => {
-    if (role !== "owner" || tab !== "whatsapp" || !settings?.whatsappRemindersEnabled) return;
-    adminGetWhatsapp()
-      .then((status) => {
-        setWhatsappStatus(status);
-        setWhatsappForm({
-          reminderMinutes: status.reminderMinutes,
-          templateName: status.templateName,
-          templateLanguage: status.templateLanguage,
-        });
-      })
-      .catch((e) => setError(e instanceof Error ? e.message : "No pudimos cargar WhatsApp"))
-      .finally(() => setWhatsappLoading(false));
-  }, [role, tab, settings?.whatsappRemindersEnabled]);
 
   useEffect(() => {
     if (!statusMenuOpen) return;
@@ -521,83 +490,13 @@ export default function AdminPage({
     try {
       const created = await superadminCreateTenant(tenantForm);
       setTenantMessage(`Barbería creada: ${created.name}. El dueño ya puede ingresar con su email.`);
-      setTenantForm({ name: "", slug: "", ownerEmail: "", ownerPassword: "", whatsappRemindersEnabled: false });
-      setTenantEditTarget(null);
+      setTenantForm({ name: "", slug: "", ownerEmail: "", ownerPassword: "" });
       setTenants(await superadminGetTenants(token));
       setTenantModalOpen(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "No pudimos crear la barbería");
     } finally {
       setCreatingTenant(false);
-    }
-  }
-
-  async function updateTenantWhatsapp(e: React.FormEvent) {
-    e.preventDefault();
-    if (!tenantEditTarget) return;
-    setUpdatingTenant(true);
-    setError("");
-    try {
-      await superadminUpdateTenant(tenantEditTarget._id, {
-        whatsappRemindersEnabled: tenantEditTarget.whatsappRemindersEnabled,
-      });
-      setTenants(await superadminGetTenants(token));
-      setTenantMessage(`Configuración actualizada para ${tenantEditTarget.name}.`);
-      setTenantEditTarget(null);
-      setTenantModalOpen(false);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "No pudimos actualizar la barbería");
-    } finally {
-      setUpdatingTenant(false);
-    }
-  }
-
-  async function setupWhatsapp() {
-    setWhatsappLoading(true);
-    setError("");
-    setWhatsappMessage("");
-    try {
-      const result = await adminCreateWhatsappSetup();
-      setWhatsappStatus(result.status);
-      window.open(result.setupUrl, "_blank", "noopener,noreferrer");
-      setWhatsappMessage("Abrimos la conexión segura de Kapso en una pestaña nueva. Cuando termines, actualizá el estado.");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "No pudimos iniciar la conexión");
-    } finally {
-      setWhatsappLoading(false);
-    }
-  }
-
-  async function syncWhatsapp() {
-    setWhatsappLoading(true);
-    setError("");
-    try {
-      const result = await adminSyncWhatsapp();
-      setWhatsappStatus(result.status);
-      setWhatsappTemplates(result.templates);
-      if (!whatsappForm.templateName && result.templates[0]) {
-        setWhatsappForm((current) => ({ ...current, templateName: result.templates[0].name, templateLanguage: result.templates[0].language || current.templateLanguage }));
-      }
-      setWhatsappMessage(result.status.connectionStatus === "connected" ? "Número conectado. Elegí una plantilla aprobada y guardá la configuración." : "Todavía no detectamos un número conectado.");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "No pudimos actualizar la conexión");
-    } finally {
-      setWhatsappLoading(false);
-    }
-  }
-
-  async function saveWhatsapp(e: React.FormEvent) {
-    e.preventDefault();
-    setWhatsappSaving(true);
-    setError("");
-    try {
-      const status = await adminSaveWhatsapp(whatsappForm);
-      setWhatsappStatus(status);
-      setWhatsappMessage("Configuración de recordatorios guardada.");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "No pudimos guardar la configuración");
-    } finally {
-      setWhatsappSaving(false);
     }
   }
 
@@ -1048,7 +947,6 @@ export default function AdminPage({
         adminTab={tab}
         onAdminTabChange={setTab}
         tenantSlug={tenantSlug}
-        whatsappEnabled={Boolean(settings?.whatsappRemindersEnabled)}
         onLogout={onLogout}
       />
       <div className="flex flex-col gap-4 max-w-[720px] lg:max-w-5xl w-full mx-auto pt-20 px-3 pb-10 sm:gap-5 sm:pt-24 sm:px-5 sm:pb-16 lg:pt-28">
@@ -1062,7 +960,7 @@ export default function AdminPage({
             <div className="mt-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
               <div>
                 <h1 className="text-2xl font-black tracking-tight text-[var(--text)] sm:text-3xl">
-                  {tab === "agenda" ? "Agenda de turnos" : tab === "resumen" ? "Resumen financiero" : tab === "config" ? "Configuración" : tab === "imagenes" ? "Imágenes" : tab === "whatsapp" ? "WhatsApp" : "Sitio web"}
+                  {tab === "agenda" ? "Agenda de turnos" : tab === "resumen" ? "Resumen financiero" : tab === "config" ? "Configuración" : tab === "imagenes" ? "Imágenes" : "Sitio web"}
                 </h1>
                 <p className="mt-1 text-sm text-[var(--muted)]">
                   {tab === "agenda" ? "Mirá qué turno sigue y actualizá cada servicio en segundos." : "Administrá tu barbería desde un solo lugar."}
@@ -1112,7 +1010,6 @@ export default function AdminPage({
                 onClick={() => {
                   setError("");
                   setTenantMessage("");
-                  setTenantEditTarget(null);
                   setTenantModalOpen(true);
                 }}
                 className="inline-flex min-h-12 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-accent px-5 py-3 font-bold text-zinc-950 transition hover:bg-accent-hover sm:w-auto"
@@ -1133,9 +1030,6 @@ export default function AdminPage({
                       <div className="min-w-0">
                         <strong>{tenant.name}</strong>
                         <p className="mt-1 truncate text-xs text-[var(--muted)]">/{tenant.slug} · {tenant.ownerId?.email || "sin dueño"}</p>
-                        <span className={`mt-2 inline-flex rounded-full px-2 py-1 text-[10px] font-extrabold uppercase tracking-[0.12em] ${tenant.whatsappRemindersEnabled ? "bg-emerald-400/10 text-emerald-300" : "bg-[var(--card-2)] text-[var(--muted)]"}`}>
-                          {tenant.whatsappRemindersEnabled ? "WhatsApp habilitado" : "WhatsApp desactivado"}
-                        </span>
                       </div>
                       <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row">
                         <button
@@ -1154,18 +1048,6 @@ export default function AdminPage({
                         >
                           {copiedTenantId === tenant._id ? "Copiado" : "Copiar link"}
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setError("");
-                            setTenantMessage("");
-                            setTenantEditTarget(tenant);
-                            setTenantModalOpen(true);
-                          }}
-                          className="min-h-11 rounded-xl border border-[var(--border)] px-3 py-2 text-sm font-bold text-[var(--muted)] transition hover:border-accent hover:text-accent"
-                        >
-                          Editar
-                        </button>
                       </div>
                     </li>
                   ))}
@@ -1178,7 +1060,7 @@ export default function AdminPage({
                 className="fixed inset-0 z-50 flex items-end justify-center bg-black/65 p-0 sm:items-center sm:p-6"
                 role="presentation"
                 onMouseDown={(event) => {
-                  if (event.target === event.currentTarget && !creatingTenant && !updatingTenant) { setTenantModalOpen(false); setTenantEditTarget(null); }
+                  if (event.target === event.currentTarget && !creatingTenant) setTenantModalOpen(false);
                 }}
               >
                 <div
@@ -1190,43 +1072,21 @@ export default function AdminPage({
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <p className="text-xs uppercase tracking-[0.18em] text-accent font-extrabold">{tenantEditTarget ? "Editar barbería" : "Nueva barbería"}</p>
-                      <h2 id="tenant-modal-title" className="mt-2 text-xl font-bold">{tenantEditTarget ? "Funciones de la barbería" : "Crear barbería y dueño"}</h2>
-                      <p className="mt-2 text-sm text-[var(--muted)]">
-                        {tenantEditTarget ? `Controlá qué funciones puede usar ${tenantEditTarget.name}.` : "La nueva cuenta tendrá su propia agenda y configuración aislada."}
-                      </p>
+                      <p className="text-xs uppercase tracking-[0.18em] text-accent font-extrabold">Nueva barbería</p>
+                      <h2 id="tenant-modal-title" className="mt-2 text-xl font-bold">Crear barbería y dueño</h2>
+                      <p className="mt-2 text-sm text-[var(--muted)]">La nueva cuenta tendrá su propia agenda y configuración aislada.</p>
                     </div>
                     <button
                       type="button"
                       aria-label="Cerrar ventana"
-                      disabled={creatingTenant || updatingTenant}
-                      onClick={() => { setTenantModalOpen(false); setTenantEditTarget(null); }}
+                      disabled={creatingTenant}
+                      onClick={() => setTenantModalOpen(false)}
                       className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-[var(--border)] text-xl text-[var(--muted)] transition hover:border-accent hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       ×
                     </button>
                   </div>
-                  {tenantEditTarget ? (
-                    <form onSubmit={updateTenantWhatsapp} className="mt-6 grid gap-4">
-                      <label className="flex items-start gap-3 rounded-2xl border border-emerald-400/25 bg-emerald-400/[0.06] p-4">
-                        <input
-                          type="checkbox"
-                          checked={tenantEditTarget.whatsappRemindersEnabled}
-                          onChange={(event) => setTenantEditTarget((current) => current ? { ...current, whatsappRemindersEnabled: event.target.checked } : current)}
-                          className="mt-1 h-5 w-5 shrink-0 accent-[var(--accent)]"
-                        />
-                        <span>
-                          <strong className="block text-sm text-[var(--text)]">Habilitar recordatorios por WhatsApp</strong>
-                          <span className="mt-1 block text-sm text-[var(--muted)]">El dueño verá el módulo para conectar su número y configurar los avisos.</span>
-                        </span>
-                      </label>
-                      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-                        <button type="button" disabled={updatingTenant} onClick={() => { setTenantModalOpen(false); setTenantEditTarget(null); }} className="min-h-12 rounded-xl border border-[var(--border)] px-5 py-3 font-bold text-[var(--muted)] transition hover:border-[var(--text)] hover:text-[var(--text)] disabled:opacity-50">Cancelar</button>
-                        <button type="submit" disabled={updatingTenant} className="min-h-12 rounded-xl bg-accent px-5 py-3 font-bold text-zinc-950 transition hover:bg-accent-hover disabled:opacity-60">{updatingTenant ? "Guardando…" : "Guardar función"}</button>
-                      </div>
-                    </form>
-                  ) : (
-                    <form onSubmit={createTenant} className="mt-6 grid gap-3 sm:grid-cols-2">
+                  <form onSubmit={createTenant} className="mt-6 grid gap-3 sm:grid-cols-2">
                       <Field label="Nombre de la barbería">
                         <input autoFocus className="input" required value={tenantForm.name} onChange={(e) => setTenantForm((current) => ({ ...current, name: e.target.value }))} placeholder="Barbería Centro" />
                       </Field>
@@ -1239,16 +1099,11 @@ export default function AdminPage({
                       <Field label="Contraseña inicial">
                         <input className="input" required minLength={4} type="password" value={tenantForm.ownerPassword} onChange={(e) => setTenantForm((current) => ({ ...current, ownerPassword: e.target.value }))} placeholder="Mínimo 4 caracteres" />
                       </Field>
-                      <label className="sm:col-span-2 flex items-start gap-3 rounded-2xl border border-emerald-400/25 bg-emerald-400/[0.06] p-4">
-                        <input type="checkbox" checked={tenantForm.whatsappRemindersEnabled} onChange={(event) => setTenantForm((current) => ({ ...current, whatsappRemindersEnabled: event.target.checked }))} className="mt-1 h-5 w-5 shrink-0 accent-[var(--accent)]" />
-                        <span><strong className="block text-sm text-[var(--text)]">Habilitar recordatorios por WhatsApp</strong><span className="mt-1 block text-sm text-[var(--muted)]">El módulo quedará visible para este dueño.</span></span>
-                      </label>
                       <div className="mt-2 flex flex-col-reverse gap-3 sm:col-span-2 sm:flex-row sm:justify-end">
                         <button type="button" disabled={creatingTenant} onClick={() => setTenantModalOpen(false)} className="min-h-12 rounded-xl border border-[var(--border)] px-5 py-3 font-bold text-[var(--muted)] transition hover:border-[var(--text)] hover:text-[var(--text)] disabled:opacity-50">Cancelar</button>
                         <button type="submit" disabled={creatingTenant} className="min-h-12 rounded-xl bg-accent px-5 py-3 font-bold text-zinc-950 transition hover:bg-accent-hover disabled:opacity-60">{creatingTenant ? "Creando…" : "Crear barbería"}</button>
                       </div>
-                    </form>
-                  )}
+                  </form>
                 </div>
               </div>
             )}
@@ -1826,61 +1681,6 @@ export default function AdminPage({
               </form>
             </div>
           </div>
-        )}
-
-        {tab === "whatsapp" && role === "owner" && settings?.whatsappRemindersEnabled && (
-          <section className="flex flex-col gap-4 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 sm:p-[22px]">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-emerald-300">Función habilitada</p>
-                <h2 className="mt-1 text-xl font-bold">Recordatorios por WhatsApp</h2>
-                <p className="mt-2 max-w-2xl text-sm text-[var(--muted)]">Conectá el número de esta barbería, elegí el aviso y Kapso enviará el recordatorio de forma automática.</p>
-              </div>
-              {whatsappStatus && <span className={`inline-flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 text-xs font-extrabold ${whatsappStatus.connectionStatus === "connected" ? "bg-emerald-400/10 text-emerald-300" : whatsappStatus.connectionStatus === "error" ? "bg-red-400/10 text-red-300" : "bg-amber-300/10 text-amber-200"}`}><span className="h-2 w-2 rounded-full bg-current" />{whatsappStatus.connectionStatus === "connected" ? "Conectado" : whatsappStatus.connectionStatus === "error" ? "Revisar conexión" : "Pendiente de conexión"}</span>}
-            </div>
-            {!whatsappStatus ? (
-              <div className="h-40 animate-pulse rounded-2xl bg-[var(--bg-soft)]" aria-label="Cargando configuración de WhatsApp" />
-            ) : whatsappStatus ? (
-              <>
-                {!whatsappStatus.configured && (
-                  <div className="rounded-2xl border border-amber-300/30 bg-amber-300/[0.08] p-4 text-sm text-amber-100">
-                    <strong className="block">Falta una configuración del servidor</strong>
-                    <span className="mt-1 block text-amber-100/75">El administrador de la plataforma debe cargar KAPSO_API_KEY como variable privada antes de conectar números.</span>
-                  </div>
-                )}
-                {whatsappStatus.displayPhone && <p className="rounded-xl border border-emerald-400/25 bg-emerald-400/[0.06] px-3.5 py-3 text-sm text-emerald-200">Número conectado: <strong>{whatsappStatus.displayPhone}</strong></p>}
-                {whatsappStatus.lastError && <p className="rounded-xl border border-red-400/25 bg-red-400/[0.06] px-3.5 py-3 text-sm text-red-200">{whatsappStatus.lastError}</p>}
-                <div className="flex flex-col gap-3 sm:flex-row">
-                  <button type="button" onClick={setupWhatsapp} disabled={whatsappLoading || !whatsappStatus.configured} className="min-h-12 rounded-xl bg-accent px-5 py-3 font-bold text-zinc-950 transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50">{whatsappStatus.connectionStatus === "pending" ? "Continuar conexión" : "Conectar WhatsApp"}</button>
-                  <button type="button" onClick={syncWhatsapp} disabled={whatsappLoading || !whatsappStatus.configured} className="min-h-12 rounded-xl border border-[var(--border)] px-5 py-3 font-bold text-[var(--muted)] transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50">{whatsappLoading ? "Actualizando…" : "Actualizar conexión"}</button>
-                </div>
-                {whatsappMessage && <p role="status" className="rounded-xl border border-emerald-400/25 bg-emerald-400/[0.06] px-3.5 py-3 text-sm font-semibold text-emerald-300">{whatsappMessage}</p>}
-                <form onSubmit={saveWhatsapp} className="grid gap-4 border-t border-[var(--border)] pt-5">
-                  <div>
-                    <h3 className="font-bold">Contenido y momento del aviso</h3>
-                    <p className="mt-1 text-sm text-[var(--muted)]">La plantilla debe estar aprobada previamente en WhatsApp Business. Usamos nombre, servicio, fecha y hora del turno.</p>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <Field label="Avisar con anticipación">
-                      <select className="input" value={whatsappForm.reminderMinutes} onChange={(event) => setWhatsappForm((current) => ({ ...current, reminderMinutes: Number(event.target.value) as 30 | 60 }))}>
-                        <option value={60}>1 hora antes</option>
-                        <option value={30}>30 minutos antes</option>
-                      </select>
-                    </Field>
-                    <Field label="Plantilla aprobada">
-                      <input className="input" required pattern="[a-z0-9_]{2,80}" value={whatsappForm.templateName} onChange={(event) => setWhatsappForm((current) => ({ ...current, templateName: event.target.value }))} placeholder="turno_recordatorio" />
-                    </Field>
-                    <Field label="Idioma">
-                      <input className="input" required pattern="[a-z]{2}(_[A-Z]{2})?" value={whatsappForm.templateLanguage} onChange={(event) => setWhatsappForm((current) => ({ ...current, templateLanguage: event.target.value }))} placeholder="es_AR" />
-                    </Field>
-                  </div>
-                  {whatsappTemplates.length > 0 && <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] p-3 text-sm"><p className="font-bold">Plantillas aprobadas detectadas</p><div className="mt-2 flex flex-wrap gap-2">{whatsappTemplates.map((template) => <button key={`${template.name}-${template.language}`} type="button" onClick={() => setWhatsappForm((current) => ({ ...current, templateName: template.name, templateLanguage: template.language || current.templateLanguage }))} className="rounded-full border border-accent/40 px-3 py-1.5 text-xs font-bold text-accent transition hover:bg-accent/10">{template.name} · {template.language}</button>)}</div></div>}
-                  <button type="submit" disabled={whatsappSaving || whatsappStatus.connectionStatus !== "connected"} className="min-h-12 w-full rounded-xl bg-accent px-5 py-3 font-bold text-zinc-950 transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50 sm:w-fit">{whatsappSaving ? "Guardando…" : "Guardar recordatorios"}</button>
-                </form>
-                <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-soft)] p-4 text-sm text-[var(--muted)]"><strong className="text-[var(--text)]">Privacidad y consentimiento</strong><p className="mt-1">El cliente verá una casilla opcional en la reserva. Solo se envían recordatorios cuando la acepta y el turno tiene un teléfono válido.</p></div>
-              </>
-            ) : null}
-          </section>
         )}
 
         {tab === "config" && draft && (

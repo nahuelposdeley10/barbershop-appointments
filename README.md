@@ -39,10 +39,6 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 Copiá `.env.example` como `.env.local` y configurá `MONGODB_URI`, `ADMIN_SESSION_SECRET`, `ADMIN_INITIAL_EMAIL`, `ADMIN_INITIAL_PASSWORD`, `DEFAULT_TENANT_SLUG` y `NEXT_PUBLIC_SITE_URL`. En una instalación nueva, las credenciales iniciales se usan solo para crear el administrador; después la contraseña queda almacenada como hash.
 
-### Recordatorios por WhatsApp
-
-La función se habilita únicamente desde el superadmin para cada barbería. Para conectar Kapso en producción, cargá `KAPSO_API_KEY` y un `CRON_SECRET` privado en Vercel. La ruta protegida `/api/cron/whatsapp-reminders` queda disponible para un scheduler externo o para Vercel Pro. En el plan Hobby no se registra un cron de Vercel porque solo permite ejecuciones diarias, lo que no alcanza para recordatorios de 30 o 60 minutos. Cada cliente debe aceptar explícitamente el recordatorio durante la reserva y la barbería debe usar una plantilla aprobada por WhatsApp Business.
-
 ```bash
 npm run dev
 npm test

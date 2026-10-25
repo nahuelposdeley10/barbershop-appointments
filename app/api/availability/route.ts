@@ -78,7 +78,6 @@ export async function GET(req: NextRequest) {
       services: settings.services,
       date,
       slots,
-      whatsappRemindersEnabled: Boolean(settings.whatsappRemindersEnabled),
     });
   } catch (err) {
     logRequestError("availability", id, err);

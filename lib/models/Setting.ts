@@ -66,22 +66,6 @@ const settingSchema = new mongoose.Schema({
   days: { type: [daySchema], default: [] },
   slotMinutes: { type: Number, default: 30 },
   cantidadBarberos: { type: Number, default: 1, min: 1 },
-  whatsappRemindersEnabled: { type: Boolean, default: false },
-  whatsappReminderMinutes: { type: Number, enum: [30, 60], default: 60 },
-  whatsappTemplateName: { type: String, default: "" },
-  whatsappTemplateLanguage: { type: String, default: "es_AR" },
-  kapsoCustomerId: { type: String, default: "" },
-  kapsoSetupLinkId: { type: String, default: "" },
-  kapsoPhoneNumberId: { type: String, default: "" },
-  kapsoBusinessAccountId: { type: String, default: "" },
-  kapsoDisplayPhone: { type: String, default: "" },
-  kapsoConnectionStatus: {
-    type: String,
-    enum: ["disabled", "pending", "connected", "error"],
-    default: "disabled",
-  },
-  kapsoLastSyncedAt: { type: Date },
-  kapsoLastError: { type: String, default: "", select: false },
   // Legacy field kept only long enough to migrate existing installations.
   pin: { type: String, default: "", select: false },
   pinHash: { type: String, default: "", select: false },
@@ -137,18 +121,6 @@ export type SettingsDoc = {
   days: DaySetting[];
   slotMinutes: number;
   cantidadBarberos: number;
-  whatsappRemindersEnabled: boolean;
-  whatsappReminderMinutes: 30 | 60;
-  whatsappTemplateName: string;
-  whatsappTemplateLanguage: string;
-  kapsoCustomerId: string;
-  kapsoSetupLinkId: string;
-  kapsoPhoneNumberId: string;
-  kapsoBusinessAccountId: string;
-  kapsoDisplayPhone: string;
-  kapsoConnectionStatus: "disabled" | "pending" | "connected" | "error";
-  kapsoLastSyncedAt?: Date;
-  kapsoLastError?: string;
   pin?: string;
   pinHash?: string;
   unavailableDates: string[];

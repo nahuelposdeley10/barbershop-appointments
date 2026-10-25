@@ -22,7 +22,6 @@ export type AvailabilityData = {
   services: Service[];
   date: string;
   slots: Slot[];
-  whatsappRemindersEnabled?: boolean;
 };
 
 export type BookingConfirmation = {
@@ -94,27 +93,7 @@ export type Settings = {
   adminEmail: string;
   adminPassword?: string;
   unavailableDates: string[];
-  whatsappRemindersEnabled: boolean;
-  whatsappReminderMinutes: 30 | 60;
-  whatsappTemplateName: string;
-  whatsappTemplateLanguage: string;
 };
-
-export type WhatsappStatus = {
-  enabled: boolean;
-  configured: boolean;
-  connectionStatus: "disabled" | "pending" | "connected" | "error";
-  displayPhone: string;
-  reminderMinutes: 30 | 60;
-  templateName: string;
-  templateLanguage: string;
-  setupLinkAvailable: boolean;
-  sandboxAvailable?: boolean;
-  lastError?: string;
-  lastSyncedAt?: string;
-};
-
-export type WhatsappTemplate = { name: string; language: string; status: string; category?: string };
 
 export type AdminSession = {
   authenticated: boolean;
@@ -132,8 +111,6 @@ export type SuperadminTenant = {
   name: string;
   status: "active" | "suspended";
   ownerId: { email: string };
-  whatsappRemindersEnabled: boolean;
-  whatsappConnectionStatus: "disabled" | "pending" | "connected" | "error";
 };
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -176,7 +153,6 @@ export function createBooking(payload: {
   service: string;
   date: string;
   time: string;
-  whatsappOptIn?: boolean;
 }, tenantSlug?: string): Promise<BookingConfirmation> {
   return request(`/bookings${tenantSlug ? `?tenant=${encodeURIComponent(tenantSlug)}` : ""}`, {
     method: "POST",
@@ -223,21 +199,10 @@ export function superadminCreateTenant(payload: {
   slug: string;
   ownerEmail: string;
   ownerPassword: string;
-  whatsappRemindersEnabled?: boolean;
 }, _token?: string): Promise<{ id: string; slug: string; name: string; ownerEmail: string }> {
   void _token;
   return request("/superadmin/tenants", {
     method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
-export function superadminUpdateTenant(
-  tenantId: string,
-  payload: { whatsappRemindersEnabled: boolean }
-): Promise<{ tenantId: string; whatsappRemindersEnabled: boolean; whatsappConnectionStatus: string }> {
-  return request(`/superadmin/tenants/${encodeURIComponent(tenantId)}`, {
-    method: "PATCH",
     body: JSON.stringify(payload),
   });
 }
@@ -324,29 +289,6 @@ export function adminUpdateSettings(
   return request("/admin/settings", {
     method: "PUT",
     body: JSON.stringify(settings),
-  });
-}
-
-export function adminGetWhatsapp(): Promise<WhatsappStatus> {
-  return request("/admin/whatsapp");
-}
-
-export function adminCreateWhatsappSetup(): Promise<{ setupUrl: string; status: WhatsappStatus }> {
-  return request("/admin/whatsapp", { method: "POST", body: JSON.stringify({ action: "setup" }) });
-}
-
-export function adminSyncWhatsapp(): Promise<{ status: WhatsappStatus; templates: WhatsappTemplate[] }> {
-  return request("/admin/whatsapp", { method: "POST", body: JSON.stringify({ action: "sync" }) });
-}
-
-export function adminSaveWhatsapp(payload: {
-  reminderMinutes: 30 | 60;
-  templateName: string;
-  templateLanguage: string;
-}): Promise<WhatsappStatus> {
-  return request("/admin/whatsapp", {
-    method: "POST",
-    body: JSON.stringify({ action: "save", ...payload }),
   });
 }
 

@@ -25,17 +25,6 @@ const bookingSchema = new mongoose.Schema(
     cancelledAt: { type: Date },
     cancelledBy: { type: String, default: "" },
     cancelReason: { type: String, default: "", maxlength: 300 },
-    whatsappOptIn: { type: Boolean, default: false },
-    whatsappReminderStatus: {
-      type: String,
-      enum: ["pending", "processing", "sent", "failed", "skipped"],
-      default: "pending",
-      index: true,
-    },
-    whatsappReminderClaimedAt: { type: Date },
-    whatsappReminderSentAt: { type: Date },
-    whatsappReminderMessageId: { type: String, default: "" },
-    whatsappReminderError: { type: String, default: "" },
   },
   { timestamps: true }
 );
@@ -61,12 +50,6 @@ export type BookingDoc = {
   cancelledAt?: Date;
   cancelledBy?: string;
   cancelReason?: string;
-  whatsappOptIn?: boolean;
-  whatsappReminderStatus?: "pending" | "processing" | "sent" | "failed" | "skipped";
-  whatsappReminderClaimedAt?: Date;
-  whatsappReminderSentAt?: Date;
-  whatsappReminderMessageId?: string;
-  whatsappReminderError?: string;
 };
 
 // Reuse the model if already compiled (avoids errors on hot-reload)

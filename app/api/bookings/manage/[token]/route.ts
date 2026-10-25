@@ -133,11 +133,6 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       booking.price = service.price;
       booking.date = date;
       booking.time = time;
-      booking.whatsappReminderStatus = "pending";
-      booking.whatsappReminderClaimedAt = undefined;
-      booking.whatsappReminderSentAt = undefined;
-      booking.whatsappReminderMessageId = "";
-      booking.whatsappReminderError = "";
       await booking.save({ session });
       updated = booking.toObject();
       hasUpdated = true;

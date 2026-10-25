@@ -234,7 +234,6 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
   const [barberName, setBarberName] = useState("Barbería");
   const [logo, setLogo] = useState("");
   const [message, setMessage] = useState("");
-  const [whatsappRemindersEnabled, setWhatsappRemindersEnabled] = useState(false);
   const [services, setServices] = useState<Service[]>([]);
   const [slots, setSlots] = useState<Slot[]>([]);
   const [selectedService, setSelectedService] = useState("");
@@ -247,7 +246,6 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
-  const [whatsappOptIn, setWhatsappOptIn] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [bookings, setBookings] = useState<BookingConfirmation[]>([]);
   const [cancellingToken, setCancellingToken] = useState<string | null>(null);
@@ -329,7 +327,6 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
         setBarberName(data.barberName);
         setLogo(data.imgLogo || "");
         setMessage(data.message || "");
-        setWhatsappRemindersEnabled(Boolean(data.whatsappRemindersEnabled));
         setServices(data.services || []);
         setSlots(data.slots || []);
         setError("");
@@ -351,7 +348,6 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
       setBarberName(data.barberName);
       setLogo(data.imgLogo || "");
       setMessage(data.message || "");
-      setWhatsappRemindersEnabled(Boolean(data.whatsappRemindersEnabled));
       setServices(data.services || []);
       setSlots(data.slots || []);
       setError("");
@@ -386,7 +382,6 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
         service: selectedService,
         date,
         time: selectedSlot,
-        whatsappOptIn,
       }, tenantSlug);
       setBookings((prev) =>
         booking.manageToken
@@ -401,7 +396,6 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
       setDate("");
       setSelectedSlot("");
       setSelectedService("");
-      setWhatsappOptIn(false);
       window.requestAnimationFrame(() =>
         document.getElementById("mis-turnos")?.scrollIntoView({ behavior: "smooth", block: "start" })
       );
@@ -839,19 +833,6 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
                   Acepto los términos: dejo mis datos para gestionar la reserva y me comprometo a avisar si no puedo asistir.
                 </span>
               </label>
-              {whatsappRemindersEnabled && (
-                <label className="flex items-start gap-3 rounded-xl border border-emerald-400/25 bg-emerald-400/[0.06] p-3 text-sm text-[var(--muted)]">
-                  <input
-                    type="checkbox"
-                    checked={whatsappOptIn}
-                    onChange={(event) => setWhatsappOptIn(event.target.checked)}
-                    className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--accent)]"
-                  />
-                  <span>
-                    Quiero recibir un recordatorio de este turno por WhatsApp antes de la cita. Es opcional y puedo no activarlo.
-                  </span>
-                </label>
-              )}
               <div className="grid grid-cols-1 sm:flex sm:justify-between gap-2.5">
                 <button
                   type="button"
