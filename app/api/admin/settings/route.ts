@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { NextRequest } from "next/server";
 import { connectDB } from "@/lib/db";
 import {
@@ -9,6 +10,8 @@ import {
 } from "@/lib/booking-logic";
 import { getAdminAccount, getAdminContext, setAdminCredentials } from "@/lib/auth";
 import { Setting } from "@/lib/models/Setting";
+import { Tenant } from "@/lib/models/Tenant";
+import { isValidTenantSlug, normalizeTenantSlug } from "@/lib/tenancy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,6 +50,8 @@ export async function GET(req: NextRequest) {
     }
     if (!context.tenantId) return Response.json({ error: "No hay una barbería seleccionada" }, { status: 403 });
     await connectDB();
+    const tenant = await Tenant.findById(context.tenantId).select("slug name").lean();
+    if (!tenant) return Response.json({ error: "Barbería no encontrada" }, { status: 404 });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let doc: any = await Setting.findOne({ tenantId: context.tenantId });
     if (!doc) {
@@ -73,7 +78,7 @@ export async function GET(req: NextRequest) {
       fillDefaults(doc);
       await doc.save();
     }
-    return Response.json(await sanitizeSettings(doc, context.userId));
+    return Response.json(await sanitizeSettings(doc, context.userId, tenant.slug, tenant.name));
   } catch (err) {
     console.error(err);
     return Response.json({ error: "Error del servidor" }, { status: 500 });
@@ -91,6 +96,8 @@ export async function PUT(req: NextRequest) {
     }
     if (!context.tenantId) return Response.json({ error: "No hay una barbería seleccionada" }, { status: 403 });
     await connectDB();
+    const tenant = await Tenant.findById(context.tenantId).select("_id slug name").lean();
+    if (!tenant) return Response.json({ error: "Barbería no encontrada" }, { status: 404 });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let current: any = await Setting.findOne({ tenantId: context.tenantId });
     if (!current) {
@@ -123,6 +130,24 @@ export async function PUT(req: NextRequest) {
       return Response.json({ error: "Cuerpo inválido" }, { status: 400 });
     }
 
+    const requestedBarberName =
+      typeof body.barberName === "string"
+        ? body.barberName.trim().slice(0, 60)
+        : String(current.barberName || "").trim().slice(0, 60);
+    if (requestedBarberName.length < 2) {
+      return Response.json({ error: "El nombre del local debe tener al menos 2 caracteres" }, { status: 400 });
+    }
+    const nextSlug = normalizeTenantSlug(requestedBarberName);
+    if (!isValidTenantSlug(nextSlug)) {
+      return Response.json({ error: "El nombre no genera un enlace público válido" }, { status: 400 });
+    }
+    if (nextSlug !== tenant.slug) {
+      const slugTaken = await Tenant.exists({ slug: nextSlug, _id: { $ne: tenant._id } });
+      if (slugTaken) {
+        return Response.json({ error: "Ese nombre ya está usado por otra barbería. Elegí otro." }, { status: 409 });
+      }
+    }
+
     const strVal = (v: unknown, max: number, fallback?: string): string | null => {
       if (typeof v === "string" && v.trim()) return v.trim().slice(0, max);
       return fallback ?? null;
@@ -132,9 +157,7 @@ export async function PUT(req: NextRequest) {
       if (val !== null) current[field] = val;
     };
 
-    if (typeof body.barberName === "string") {
-      current.barberName = body.barberName.trim().slice(0, 60);
-    }
+    current.barberName = requestedBarberName;
     if (typeof body.message === "string") {
       current.message = body.message.trim().slice(0, 200);
     }
@@ -276,11 +299,23 @@ export async function PUT(req: NextRequest) {
       ];
     }
 
-    await current.save();
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        await current.save({ session });
+        await Tenant.updateOne(
+          { _id: tenant._id },
+          { $set: { name: requestedBarberName, slug: nextSlug } },
+          { session }
+        );
+      });
+    } finally {
+      await session.endSession();
+    }
     if (requestedEmail.trim() || requestedPassword) {
       await setAdminCredentials(requestedEmail, requestedPassword, context.userId);
     }
-    return Response.json(await sanitizeSettings(current, context.userId));
+    return Response.json(await sanitizeSettings(current, context.userId, nextSlug, requestedBarberName));
   } catch (err) {
     if (err instanceof Error && /Cada servicio/.test(err.message)) {
       return Response.json({ error: err.message }, { status: 400 });
@@ -290,11 +325,11 @@ export async function PUT(req: NextRequest) {
   }
 }
 
-async function sanitizeSettings(doc: Record<string, unknown>, userId?: string) {
+async function sanitizeSettings(doc: Record<string, unknown>, userId?: string, tenantSlug?: string, tenantName?: string) {
   const candidate = doc as unknown as { toObject?: () => Record<string, unknown> };
   const plain = typeof candidate.toObject === "function" ? candidate.toObject() : { ...doc };
   delete plain.pin;
   delete plain.pinHash;
   const account = await getAdminAccount(userId);
-  return { ...plain, adminEmail: account.email, adminPassword: "" };
+  return { ...plain, adminEmail: account.email, adminPassword: "", tenantSlug, tenantName };
 }

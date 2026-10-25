@@ -59,6 +59,8 @@ export type AdminRevenue = {
 };
 
 export type Settings = {
+  tenantSlug?: string;
+  tenantName?: string;
   barberName: string;
   message: string;
   slogan: string;

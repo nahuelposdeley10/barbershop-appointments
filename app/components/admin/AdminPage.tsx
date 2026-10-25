@@ -79,6 +79,15 @@ function formatMoney(value: number) {
   return moneyFormatter.format(value);
 }
 
+function normalizeTenantSlugPreview(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 63);
+}
+
 function formatRevenueDate(date: string) {
   if (!date) return "Desde el inicio";
   const value = new Date(`${date}T00:00:00`);
@@ -259,6 +268,8 @@ export default function AdminPage({
   });
   const [settings, setSettings] = useState<Settings | null>(null);
   const [draft, setDraft] = useState<Settings | null>(null);
+  const [activeTenantSlug, setActiveTenantSlug] = useState(tenantSlug);
+  const [activeTenantName, setActiveTenantName] = useState(tenantName);
   const [barberosInput, setBarberosInput] = useState("1");
   const [slotMinutesInput, setSlotMinutesInput] = useState("30");
   const [adminEmail, setAdminEmail] = useState("");
@@ -293,6 +304,7 @@ export default function AdminPage({
   const [monthRevenueOffset, setMonthRevenueOffset] = useState(0);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  const [nameChangeConfirmOpen, setNameChangeConfirmOpen] = useState(false);
   const [newBlockDate, setNewBlockDate] = useState("");
   const [checkingBlock, setCheckingBlock] = useState(false);
   const [blockWarning, setBlockWarning] = useState<{
@@ -351,13 +363,15 @@ export default function AdminPage({
       .then((s) => {
         setSettings(s);
         setDraft(JSON.parse(JSON.stringify(s)));
+        setActiveTenantSlug(s.tenantSlug || tenantSlug);
+        setActiveTenantName(s.tenantName || s.barberName || tenantName);
         setBarberosInput(String(s.cantidadBarberos ?? 1));
         setSlotMinutesInput(String(s.slotMinutes ?? 30));
         setAdminEmail(s.adminEmail || "");
         setAdminPassword("");
       })
       .catch((e) => setError(e.message));
-  }, [token, role]);
+  }, [token, role, tenantSlug, tenantName]);
 
   useEffect(() => {
     if (role !== "owner") return;
@@ -846,8 +860,7 @@ export default function AdminPage({
     });
   }
 
-  async function saveSettings(e: React.FormEvent) {
-    e.preventDefault();
+  async function persistSettings() {
     if (!draft) return;
     setSaving(true);
     setError("");
@@ -860,16 +873,30 @@ export default function AdminPage({
       });
       setSettings(updated);
       setDraft(JSON.parse(JSON.stringify(updated)));
+      setActiveTenantSlug(updated.tenantSlug || activeTenantSlug);
+      setActiveTenantName(updated.tenantName || updated.barberName);
       setBarberosInput(String(updated.cantidadBarberos ?? 1));
       setSlotMinutesInput(String(updated.slotMinutes ?? 30));
       setAdminEmail(updated.adminEmail || "");
       setAdminPassword("");
       setSaved(true);
+      setNameChangeConfirmOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error inesperado");
     } finally {
       setSaving(false);
     }
+  }
+
+  async function saveSettings(e: React.FormEvent) {
+    e.preventDefault();
+    if (!draft) return;
+    const nextSlug = normalizeTenantSlugPreview(draft.barberName);
+    if (activeTenantSlug && nextSlug && nextSlug !== activeTenantSlug) {
+      setNameChangeConfirmOpen(true);
+      return;
+    }
+    await persistSettings();
   }
 
   const stats = {
@@ -946,7 +973,7 @@ export default function AdminPage({
         adminRole={role}
         adminTab={tab}
         onAdminTabChange={setTab}
-        tenantSlug={tenantSlug}
+        tenantSlug={activeTenantSlug}
         onLogout={onLogout}
       />
       <div className="flex flex-col gap-4 max-w-[720px] lg:max-w-5xl w-full mx-auto pt-20 px-3 pb-10 sm:gap-5 sm:pt-24 sm:px-5 sm:pb-16 lg:pt-28">
@@ -975,7 +1002,7 @@ export default function AdminPage({
           <section className="flex flex-col gap-3 rounded-2xl border border-accent/35 bg-accent/[0.09] p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5" role="status">
             <div>
               <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-accent">Modo superadmin</p>
-              <p className="mt-1 font-bold text-[var(--text)]">Administrando {tenantName || tenantSlug || "esta barbería"}</p>
+              <p className="mt-1 font-bold text-[var(--text)]">Administrando {activeTenantName || activeTenantSlug || "esta barbería"}</p>
               <p className="mt-1 text-xs text-[var(--muted)]">Los cambios se guardan en este tenant.</p>
             </div>
             <button
@@ -1688,14 +1715,14 @@ export default function AdminPage({
             <Field label="Nombre del local / barbería">
               <input
                 className="input"
+                required
+                minLength={2}
+                maxLength={60}
                 value={draft.barberName}
                 onChange={(e) => setDraft({ ...draft, barberName: e.target.value })}
               />
               <span className="text-[var(--muted)] text-xs font-normal">
-                Si lo dejás vacío, arriba se muestra solo el logo (o la tijera).
-              </span>
-              <span className="text-[var(--muted)] text-xs font-normal">
-                Cambiar este nombre no modifica la URL pública ni los links compartidos.
+                El nombre también define el enlace público. Si lo cambiás, te pediremos confirmar el nuevo enlace antes de guardar.
               </span>
             </Field>
 
@@ -2500,6 +2527,21 @@ export default function AdminPage({
             </div>
           </div>
         )}
+        <ConfirmDialog
+          open={nameChangeConfirmOpen}
+          title="¿Cambiar el enlace de la barbería?"
+          description="Al cambiar el nombre también cambiarán el enlace público y el enlace de reservas. El enlace actual dejará de funcionar y tendrás que compartir los nuevos enlaces."
+          detail={
+            draft && activeTenantSlug
+              ? `Actual: /b/${activeTenantSlug} · Nuevo: /b/${normalizeTenantSlugPreview(draft.barberName)}`
+              : undefined
+          }
+          confirmLabel="Cambiar nombre y enlaces"
+          cancelLabel="Seguir editando"
+          loading={saving}
+          onConfirm={persistSettings}
+          onCancel={() => setNameChangeConfirmOpen(false)}
+        />
         <ConfirmDialog
           open={Boolean(bookingToDelete)}
           title="¿Anular este turno?"
