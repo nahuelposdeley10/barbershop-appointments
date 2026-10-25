@@ -19,22 +19,8 @@ export async function getTenantBySlug(slug: string): Promise<TenantDoc | null> {
   return Tenant.findOne({ slug, status: "active" }).lean();
 }
 
-export async function getDefaultTenant(): Promise<TenantDoc | null> {
-  await connectDB();
-  const configured = normalizeTenantSlug(process.env.DEFAULT_TENANT_SLUG || "");
-  if (configured) {
-    const tenant = await Tenant.findOne({ slug: configured, status: "active" }).lean();
-    if (tenant) return tenant;
-  }
-  return Tenant.findOne({ status: "active" }).sort({ createdAt: 1 }).lean();
-}
-
-export async function getTenantForSlugOrDefault(slug?: string | null): Promise<TenantDoc | null> {
-  return slug ? getTenantBySlug(normalizeTenantSlug(slug)) : getDefaultTenant();
-}
-
-export function tenantFilter(tenantId?: string | null): Record<string, string> {
-  return tenantId ? { tenantId } : {};
+export function tenantFilter(tenantId: string): Record<string, string> {
+  return { tenantId };
 }
 
 export function hasExplicitTenantSelector(req: Request): boolean {
@@ -48,7 +34,8 @@ export function tenantQueryFromRequest(req: Request): string {
 }
 
 export async function getTenantForRequest(req: Request): Promise<TenantDoc | null> {
-  return getTenantForSlugOrDefault(tenantQueryFromRequest(req));
+  const slug = tenantQueryFromRequest(req);
+  return slug ? getTenantBySlug(slug) : null;
 }
 
 export async function resolveTenantForRequest(req: Request): Promise<{

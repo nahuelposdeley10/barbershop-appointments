@@ -11,7 +11,7 @@ export default async function TenantHome({ params }: Props) {
   const normalizedSlug = normalizeTenantSlug(slug);
   const tenant = await getTenantBySlug(normalizedSlug);
   if (!tenant) notFound();
-  return <Home searchParams={Promise.resolve({ tenant: normalizedSlug })} />;
+  return <Home tenantSlug={normalizedSlug} />;
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {

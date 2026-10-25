@@ -26,10 +26,10 @@ export async function GET(req: NextRequest) {
     }
     await connectDB();
     const { tenant, explicit } = await resolveTenantForRequest(req);
-    if (explicit && !tenant) {
+    if (!explicit || !tenant) {
       return Response.json({ error: "Barbería no encontrada" }, { status: 404 });
     }
-    const tenantId = tenant ? String(tenant._id) : undefined;
+    const tenantId = String(tenant._id);
     const search = req.nextUrl.searchParams;
     const date = normalizeDate(search.get("date") || "");
     if (!date) {

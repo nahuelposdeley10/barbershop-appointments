@@ -76,7 +76,8 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     manageTokenHash: hashBookingManageToken(token),
   }).select("tenantId");
   if (!currentBooking) return Response.json({ error: "Turno no encontrado" }, { status: 404 });
-  const tenantId = currentBooking.tenantId ? String(currentBooking.tenantId) : undefined;
+  if (!currentBooking.tenantId) return Response.json({ error: "Turno no encontrado" }, { status: 404 });
+  const tenantId = String(currentBooking.tenantId);
   const settings = await getSettings(tenantId);
   const service = settings.services.find((item) => item.name === serviceName);
   if (!service) return Response.json({ error: "Servicio inválido" }, { status: 400 });
@@ -112,7 +113,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       for (const lockDate of lockDates) {
         await BookingLock.findOneAndUpdate(
           { ...tenantFilter(tenantId), date: lockDate },
-          { $setOnInsert: { ...(tenantId ? { tenantId } : {}), date: lockDate } },
+          { $setOnInsert: { tenantId, date: lockDate } },
           { upsert: true, new: true, session }
         );
       }

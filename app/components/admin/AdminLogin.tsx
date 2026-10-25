@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
 import { adminLogin } from "@/lib/client-api";
 import { BarberPole } from "../booking/BarberIcons";
 
@@ -28,12 +27,9 @@ export default function AdminLogin({ onLogin }: { onLogin: () => void }) {
 
   return (
     <main className="booking-bg flex min-h-[100svh] flex-col items-center justify-center gap-2.5 px-3 py-3 sm:gap-4 sm:px-5 sm:py-8">
-      <Link
-        href="/reservar"
-        className="self-start rounded-lg px-2 py-1.5 text-xs font-semibold text-zinc-400 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)] sm:self-auto sm:py-2 sm:text-sm"
-      >
-        <span aria-hidden="true">←</span> Volver a la página de reservas
-      </Link>
+      <p className="text-center text-xs font-semibold text-zinc-500 sm:text-sm">
+        Acceso privado para administrar tu barbería
+      </p>
 
       <section className="flex w-full max-w-[540px] flex-col overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] text-left shadow-2xl shadow-black/20 md:max-w-[780px] md:flex-row">
         <div className="relative hidden min-h-[340px] flex-[0_0_42%] md:block">

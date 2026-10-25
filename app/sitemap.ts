@@ -4,10 +4,7 @@ import { Tenant } from "@/lib/models/Tenant";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
-  const entries: MetadataRoute.Sitemap = [
-    { url: baseUrl, changeFrequency: "weekly", priority: 1 },
-    { url: `${baseUrl}/reservar`, changeFrequency: "weekly", priority: 0.9 },
-  ];
+  const entries: MetadataRoute.Sitemap = [];
   try {
     await connectDB();
     const tenants = await Tenant.find({ status: "active" }).select("slug updatedAt").lean();

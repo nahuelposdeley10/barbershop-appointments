@@ -44,10 +44,8 @@ function getRanges(today: string, dayOffset: number, weekOffset: number, monthOf
   };
 }
 
-async function summarize(range: RevenueRange, tenantId: string | null) {
-  const tenantFilter = tenantId
-    ? { tenantId: new mongoose.Types.ObjectId(tenantId) }
-    : { tenantId: { $exists: false } };
+async function summarize(range: RevenueRange, tenantId: string) {
+  const tenantFilter = { tenantId: new mongoose.Types.ObjectId(tenantId) };
   const dateFilter = range.from || range.to
     ? { date: { ...(range.from ? { $gte: range.from } : {}), ...(range.to ? { $lte: range.to } : {}) } }
     : {};
@@ -104,6 +102,7 @@ export async function GET(req: NextRequest) {
     if (context.role === "superadmin") {
       return Response.json({ error: "El superadmin debe elegir una barbería desde su sección." }, { status: 403 });
     }
+    if (!context.tenantId) return Response.json({ error: "No hay una barbería seleccionada" }, { status: 403 });
     await connectDB();
     const today = localDateStr(new Date());
     const ranges = getRanges(

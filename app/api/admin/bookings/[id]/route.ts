@@ -21,6 +21,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       return Response.json({ error: "No autorizado" }, { status: 401 });
     }
     if (context.role === "superadmin") return Response.json({ error: "Acción no disponible para superadmin" }, { status: 403 });
+    if (!context.tenantId) return Response.json({ error: "No hay una barbería seleccionada" }, { status: 403 });
     const { id } = await params;
     if (!mongoose.isValidObjectId(id)) {
       return Response.json({ error: "ID inválido" }, { status: 400 });
@@ -91,6 +92,7 @@ export async function DELETE(req: NextRequest, { params }: Ctx) {
       return Response.json({ error: "No autorizado" }, { status: 401 });
     }
     if (context.role === "superadmin") return Response.json({ error: "Acción no disponible para superadmin" }, { status: 403 });
+    if (!context.tenantId) return Response.json({ error: "No hay una barbería seleccionada" }, { status: 403 });
     const { id } = await params;
     if (!mongoose.isValidObjectId(id)) {
       return Response.json({ error: "ID inválido" }, { status: 400 });

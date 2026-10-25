@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Playfair_Display } from "next/font/google";
 import "./globals.css";
-import { getSettings } from "@/lib/booking-logic";
 import NoZoom from "./components/NoZoom";
 
 export const viewport: Viewport = {
@@ -21,23 +20,11 @@ const playfair = Playfair_Display({
   subsets: ["latin"],
 });
 
-export async function generateMetadata(): Promise<Metadata> {
-  let nombre = "BarberYá";
-  try {
-    const s = await Promise.race([
-      getSettings(),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 800)),
-    ]);
-    if (s?.barberName) nombre = s.barberName;
-  } catch {
-    // fallback: no romper el layout raíz si la DB no responde
-  }
-
-  return {
+export const metadata: Metadata = {
     metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
-    title: `${nombre} | Tu barbería de confianza`,
+    title: "BarberYá | Turnos online",
     description:
-      `Cortes modernos, degradados, barba y más. Reservá tu turno online en ${nombre}.`,
+      "Reservá tu turno online en tu barbería.",
     keywords: [
       "barbería",
       "corte de pelo",
@@ -47,19 +34,16 @@ export async function generateMetadata(): Promise<Metadata> {
       "barbería cercana",
     ],
     openGraph: {
-      title: nombre,
+      title: "BarberYá | Turnos online",
       description: "Tu barbería de confianza. Cortes, barba, degradados y más.",
       type: "website",
     },
     twitter: {
       card: "summary_large_image",
-      title: nombre,
-      description: `Reservá tu turno online en ${nombre}.`,
+      title: "BarberYá | Turnos online",
+      description: "Reservá tu turno online en tu barbería.",
     },
-    alternates: { canonical: "/" },
-    robots: { index: true, follow: true },
-  };
-}
+};
 
 export default function RootLayout({
   children,

@@ -1,11 +1,12 @@
 import Image from "next/image";
 import Link from "next/link";
 import { cache } from "react";
+import { notFound } from "next/navigation";
 import Navbar from "./components/Navbar";
 import { BarberPole } from "./components/booking/BarberIcons";
 import { connectDB } from "@/lib/db";
 import { getSettings } from "@/lib/booking-logic";
-import { getTenantForSlugOrDefault } from "@/lib/tenancy";
+import { getTenantBySlug, normalizeTenantSlug } from "@/lib/tenancy";
 
 export const dynamic = "force-dynamic";
 
@@ -105,56 +106,11 @@ const IMG = {
   ],
 };
 
-function fallbackSiteData(): SiteData {
-  return {
-    nombre: "Barbería Los Tilos",
-    message: "Reservá tu turno online",
-    slogan: "Tu estilo, nuestra pasión",
-    heroTitle1: "Tu Estilo,",
-    heroTitle2: "Nuestra Pasión",
-    heroDescription:
-      "Cortes modernos, degradados impecables y una experiencia premium que te hace volver.",
-    aboutTitle: "Más que un corte,",
-    aboutTitle2: "una experiencia",
-    aboutText:
-      "Combinamos técnica, estilo y calidez para que cada visita sea única.",
-    whatsapp: "5491162470117",
-    instagram: "#",
-    facebook: "#",
-    email: "contacto@barberia.com",
-    direccion: "Av. Ejemplo 1234, Ciudad",
-    mapaQuery: "Av.+Ejemplo+1234,+Ciudad",
-    mapLink: "https://maps.app.goo.gl/eYWFdpahSLpVakd68",
-    imgHero: IMG.hero,
-    imgAbout: IMG.about,
-    imgReservar: IMG.reservar,
-    imgLogo: "",
-    imgGaleria: IMG.galeria,
-    profesionales: IMG.profesionales,
-    reservarUrl: "/reservar",
-    servicios: [
-      { nombre: "Corte de cabello", precio: 5000, duracion: 30, img: "" },
-      { nombre: "Barba", precio: 3000, duracion: 20, img: "" },
-      { nombre: "Corte y barba", precio: 7000, duracion: 40, img: "" },
-    ],
-    horarios: [
-      { dia: "Lunes", horario: "09:00 - 20:00" },
-      { dia: "Martes", horario: "09:00 - 20:00" },
-      { dia: "Miércoles", horario: "09:00 - 20:00" },
-      { dia: "Jueves", horario: "09:00 - 20:00" },
-      { dia: "Viernes", horario: "09:00 - 20:00" },
-      { dia: "Sábado", horario: "09:00 - 20:00" },
-    ],
-  };
-}
-
-async function getSiteDataFromDatabase(tenantSlug?: string): Promise<SiteData> {
+async function getSiteDataFromDatabase(tenantSlug: string): Promise<SiteData> {
   await connectDB();
-  const tenant = await getTenantForSlugOrDefault(tenantSlug);
-  if (tenantSlug && !tenant) {
-    throw new Error("Tenant not found");
-  }
-  const s = await getSettings(tenant ? String(tenant._id) : undefined);
+  const tenant = await getTenantBySlug(normalizeTenantSlug(tenantSlug));
+  if (!tenant) throw new Error("Tenant not found");
+  const s = await getSettings(String(tenant._id));
     const servicios: SiteService[] = (s.services || []).map(
       (sv: { name: string; price: number; duration: number; img?: string }) => ({
         nombre: sv.name || "Servicio",
@@ -207,28 +163,22 @@ async function getSiteDataFromDatabase(tenantSlug?: string): Promise<SiteData> {
     imgGaleria:
       s.imgGaleria && s.imgGaleria.length > 0 ? s.imgGaleria : IMG.galeria,
     profesionales: profesionalesDb.length > 0 ? profesionalesDb : IMG.profesionales,
-    reservarUrl: tenant ? `/b/${tenant.slug}/reservar` : "/reservar",
+    reservarUrl: `/b/${tenant.slug}/reservar`,
     servicios,
     horarios,
   };
 }
 
-const getSiteData = cache(async (tenantSlug = ""): Promise<SiteData> => {
-  try {
-    return await Promise.race([
-      getSiteDataFromDatabase(tenantSlug),
-      new Promise<SiteData>((_, reject) => {
-        // Keep this slightly above MongoDB's 3s connection timeout. A shorter
-        // race can render the generic fallback while a cold function is still
-        // establishing a healthy connection to the database.
-        setTimeout(() => reject(new Error("Site data request timed out")), 3500);
-      }),
-    ]);
-  } catch (error) {
-    if (tenantSlug) throw error;
-    console.error("Site data unavailable; rendering fallback content", error);
-    return fallbackSiteData();
-  }
+const getSiteData = cache(async (tenantSlug: string): Promise<SiteData> => {
+  return Promise.race([
+    getSiteDataFromDatabase(tenantSlug),
+    new Promise<SiteData>((_, reject) => {
+      // Keep this slightly above MongoDB's 3s connection timeout. A shorter
+      // race can render an error while a cold function is still establishing a
+      // healthy connection to the database.
+      setTimeout(() => reject(new Error("Site data request timed out")), 3500);
+    }),
+  ]);
 });
 
 function serviceImage(name: string): string {
@@ -894,21 +844,20 @@ function Footer({ data }: { data: SiteData }) {
    PAGE
    ───────────────────────────────────────────── */
 export async function generateMetadata() {
-  const data = await getSiteData();
   return {
-    title: data.nombre || "Barbería",
-    description: `${data.slogan}. Cortes premium y un servicio que te hace volver.`,
+    title: "Barbería no encontrada",
+    description: "Elegí una barbería desde un enlace válido para reservar.",
+    robots: { index: false, follow: false },
   };
 }
 
 type HomeProps = {
-  searchParams?: Promise<{ tenant?: string | string[] }>;
+  tenantSlug?: string;
 };
 
-export default async function Home({ searchParams }: HomeProps = {}) {
-  const params = searchParams ? await searchParams : {};
-  const tenantParam = Array.isArray(params.tenant) ? params.tenant[0] : params.tenant;
-  const data = await getSiteData(tenantParam || "");
+export default async function Home({ tenantSlug }: HomeProps = {}) {
+  if (!tenantSlug) notFound();
+  const data = await getSiteData(tenantSlug);
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "HairSalon",
@@ -934,7 +883,7 @@ export default async function Home({ searchParams }: HomeProps = {}) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
-      <Navbar nombre={data.nombre} logo={data.imgLogo} tenantSlug={tenantParam || null} />
+      <Navbar nombre={data.nombre} logo={data.imgLogo} tenantSlug={tenantSlug} />
       <main className="flex-1">
         <Hero data={data} />
         <SectionDivider />

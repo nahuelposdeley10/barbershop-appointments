@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
     if (context.role === "superadmin") {
       return Response.json({ error: "El superadmin debe elegir una barbería desde su sección." }, { status: 403 });
     }
+    if (!context.tenantId) return Response.json({ error: "No hay una barbería seleccionada" }, { status: 403 });
 
     let body: {
       name?: string;
@@ -137,6 +138,7 @@ export async function GET(req: NextRequest) {
     if (context.role === "superadmin") {
       return Response.json({ error: "El superadmin debe elegir una barbería desde su sección." }, { status: 403 });
     }
+    if (!context.tenantId) return Response.json({ error: "No hay una barbería seleccionada" }, { status: 403 });
     await connectDB();
     const search = req.nextUrl.searchParams;
     const filter: Record<string, string> = { ...tenantFilter(context.tenantId) };

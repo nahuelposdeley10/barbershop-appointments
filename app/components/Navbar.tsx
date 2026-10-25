@@ -104,12 +104,11 @@ export default function Navbar({
   }, [open]);
 
   const panelLinks = adminRole === "superadmin" ? superadminPanelLinks : ownerPanelLinks;
-  const publicHomeUrl = tenantSlug ? `/b/${tenantSlug}` : "/#hero";
-  const reservationUrl = tenantSlug ? `/b/${tenantSlug}/reservar` : "/reservar";
-  const publicLinks = links.map((link) => ({
-    ...link,
-    href: tenantSlug ? `/b/${tenantSlug}${link.href.slice(1)}` : link.href,
-  }));
+  const publicHomeUrl = tenantSlug ? `/b/${tenantSlug}` : "/admin";
+  const reservationUrl = tenantSlug ? `/b/${tenantSlug}/reservar` : "/admin";
+  const publicLinks = tenantSlug
+    ? links.map((link) => ({ ...link, href: `/b/${tenantSlug}${link.href.slice(1)}` }))
+    : [];
 
   function selectPanelTab(tab: AdminPanelTab) {
     onAdminTabChange?.(tab);

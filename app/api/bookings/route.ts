@@ -72,10 +72,10 @@ export async function POST(req: NextRequest) {
 
     await connectDB();
     const { tenant, explicit } = await resolveTenantForRequest(req);
-    if (explicit && !tenant) {
+    if (!explicit || !tenant) {
       return Response.json({ error: "Barbería no encontrada" }, { status: 404 });
     }
-    const tenantId = tenant ? String(tenant._id) : undefined;
+    const tenantId = String(tenant._id);
     const settings = await getSettings(tenantId);
     const serviceCfg = settings.services.find((s) => s.name === cleanService);
     if (!serviceCfg) {
@@ -132,7 +132,7 @@ export async function POST(req: NextRequest) {
         // Serializa las reservas del mismo día para evitar sobreventa por carreras concurrentes.
         await BookingLock.findOneAndUpdate(
           { ...tenantFilter(tenantId), date: d },
-          { $setOnInsert: { ...(tenantId ? { tenantId } : {}), date: d } },
+          { $setOnInsert: { tenantId, date: d } },
           { upsert: true, new: true, session }
         );
         const openings = await Booking.find({ ...tenantFilter(tenantId), date: d, status: { $ne: "cancelled" } })

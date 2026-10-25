@@ -45,12 +45,13 @@ export async function GET(req: NextRequest) {
     if (context.role === "superadmin") {
       return Response.json({ error: "El superadmin administra barberías desde su sección." }, { status: 403 });
     }
+    if (!context.tenantId) return Response.json({ error: "No hay una barbería seleccionada" }, { status: 403 });
     await connectDB();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let doc: any = await Setting.findOne(context.tenantId ? { tenantId: context.tenantId } : {});
+    let doc: any = await Setting.findOne({ tenantId: context.tenantId });
     if (!doc) {
       doc = await Setting.create({
-        ...(context.tenantId ? { tenantId: context.tenantId } : {}),
+        tenantId: context.tenantId,
         barberName: "Barbería Los Tilos",
         message: "Reservá tu turno online sin esperas.",
         services: [
@@ -88,12 +89,13 @@ export async function PUT(req: NextRequest) {
     if (context.role === "superadmin") {
       return Response.json({ error: "El superadmin administra barberías desde su sección." }, { status: 403 });
     }
+    if (!context.tenantId) return Response.json({ error: "No hay una barbería seleccionada" }, { status: 403 });
     await connectDB();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let current: any = await Setting.findOne(context.tenantId ? { tenantId: context.tenantId } : {});
+    let current: any = await Setting.findOne({ tenantId: context.tenantId });
     if (!current) {
       current = await Setting.create({
-        ...(context.tenantId ? { tenantId: context.tenantId } : {}),
+        tenantId: context.tenantId,
         barberName: "Barbería Los Tilos",
         message: "Reservá tu turno online",
         services: [

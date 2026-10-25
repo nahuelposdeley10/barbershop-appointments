@@ -62,15 +62,13 @@ export function normalizeWhatsapp(value: string): string {
   return digits;
 }
 
-export async function getSettings(tenantId?: string | null) {
-  const filter = tenantId
-    ? { tenantId }
-    : { $or: [{ tenantId: { $exists: false } }, { tenantId: null }] };
+export async function getSettings(tenantId: string) {
+  const filter = { tenantId };
   let doc = await Setting.findOne(filter).select("+pin +pinHash");
   if (!doc) {
     doc = await Setting.create({
       ...defaultSettings(),
-      ...(tenantId ? { tenantId } : {}),
+      tenantId,
     });
   } else {
     const def = defaultSettings();

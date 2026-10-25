@@ -37,7 +37,7 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 ## Operación de la barbería
 
-Copiá `.env.example` como `.env.local` y configurá `MONGODB_URI`, `ADMIN_SESSION_SECRET`, `ADMIN_INITIAL_EMAIL`, `ADMIN_INITIAL_PASSWORD`, `DEFAULT_TENANT_SLUG` y `NEXT_PUBLIC_SITE_URL`. En una instalación nueva, las credenciales iniciales se usan solo para crear el administrador; después la contraseña queda almacenada como hash.
+Copiá `.env.example` como `.env.local` y configurá `MONGODB_URI`, `ADMIN_SESSION_SECRET`, `ADMIN_INITIAL_EMAIL`, `ADMIN_INITIAL_PASSWORD` y `NEXT_PUBLIC_SITE_URL`. En una instalación nueva, las credenciales iniciales se usan solo para crear el administrador; después la contraseña queda almacenada como hash.
 
 ```bash
 npm run dev
