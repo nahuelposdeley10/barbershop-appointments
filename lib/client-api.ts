@@ -234,7 +234,7 @@ export function adminGetBookings(
 
 export function adminCreateBooking(
   token: string,
-  booking: { name: string; phone?: string; service: string; date: string; time: string }
+  booking: { name: string; phone?: string; service: string; date?: string; time?: string }
 ): Promise<AdminBooking> {
   void token;
   return request("/admin/bookings", {

@@ -1634,20 +1634,18 @@ export default function AdminPage({
                     placeholder="Nombre y apellido"
                   />
                 </Field>
-                <Field label="Fecha">
+                <Field label="Fecha (opcional)">
                   <input
                     type="date"
                     className="input"
-                    required
                     value={manualBookingForm.date}
                     onChange={(event) => setManualBookingForm((current) => ({ ...current, date: event.target.value }))}
                   />
                 </Field>
-                <Field label="Horario">
+                <Field label="Horario (opcional)">
                   <input
                     type="time"
                     className="input"
-                    required
                     value={manualBookingForm.time}
                     onChange={(event) => setManualBookingForm((current) => ({ ...current, time: event.target.value }))}
                   />

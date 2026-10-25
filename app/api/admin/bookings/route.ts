@@ -2,13 +2,8 @@ import { NextRequest } from "next/server";
 import { connectDB } from "@/lib/db";
 import {
   getSettings,
-  isValidTime,
   normalizeDate,
   localDateStr,
-  localMinutes,
-  toMinutes,
-  weekdayForDate,
-  overlaps,
   normalizeWhatsapp,
 } from "@/lib/booking-logic";
 import { getAdminContext } from "@/lib/auth";
@@ -46,7 +41,8 @@ export async function POST(req: NextRequest) {
     const cleanName = typeof body.name === "string" ? body.name.trim() : "";
     const cleanPhone = typeof body.phone === "string" ? normalizeWhatsapp(body.phone) : "";
     const cleanService = typeof body.service === "string" ? body.service.trim() : "";
-    const cleanDate = typeof body.date === "string" ? normalizeDate(body.date) : null;
+    const rawDate = typeof body.date === "string" ? body.date.trim() : "";
+    const cleanDate = rawDate ? normalizeDate(rawDate) : localDateStr(new Date());
     const cleanTime = typeof body.time === "string" ? body.time.trim() : "";
 
     if (!cleanName || cleanName.length < 2 || cleanName.length > 80) {
@@ -58,47 +54,12 @@ export async function POST(req: NextRequest) {
     if (!cleanDate) {
       return Response.json({ error: "Fecha inválida" }, { status: 400 });
     }
-    if (!isValidTime(cleanTime)) {
-      return Response.json({ error: "Hora inválida" }, { status: 400 });
-    }
 
     await connectDB();
     const settings = await getSettings(context.tenantId);
     const service = settings.services.find((item) => item.name === cleanService);
     if (!service) {
       return Response.json({ error: "Elegí un servicio válido" }, { status: 400 });
-    }
-
-    const today = localDateStr(new Date());
-    if (cleanDate > today) {
-      return Response.json({ error: "Un turno completado no puede quedar en una fecha futura" }, { status: 400 });
-    }
-    const dayCfg = settings.days.find((day) => day.day === weekdayForDate(cleanDate));
-    const start = toMinutes(cleanTime);
-    const end = start + service.duration;
-    if (cleanDate === today) {
-      if (!dayCfg?.enabled || settings.unavailableDates.includes(cleanDate)) {
-        return Response.json({ error: "Ese día no figura como disponible" }, { status: 400 });
-      }
-      if (start > localMinutes(new Date())) {
-        return Response.json({ error: "Un turno completado debe tener una hora ya realizada" }, { status: 400 });
-      }
-    }
-    if (dayCfg?.enabled && (start < toMinutes(dayCfg.open) || end > toMinutes(dayCfg.close))) {
-      return Response.json({ error: "El turno queda fuera del horario de atención" }, { status: 400 });
-    }
-    if (cleanDate === today) {
-      const openings = await Booking.find({
-        ...tenantFilter(context.tenantId),
-        date: cleanDate,
-        status: { $ne: "cancelled" },
-      }).select("time duration").lean();
-      const occupied = openings.filter((booking) =>
-        overlaps(start, service.duration, toMinutes(booking.time), booking.duration)
-      ).length;
-      if (occupied >= Math.max(1, settings.cantidadBarberos || 1)) {
-        return Response.json({ error: "Ese horario ya está completo" }, { status: 409 });
-      }
     }
 
     const booking = await Booking.create({
