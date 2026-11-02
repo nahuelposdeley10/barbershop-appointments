@@ -69,6 +69,19 @@ function formatDate(dateStr: string) {
   return `${DAY_NAMES[d.getDay()]} ${d.getDate()} de ${MONTH_NAMES[d.getMonth()]}`;
 }
 
+function whatsappReminderHref(booking: AdminBooking) {
+  const phone = booking.phone?.replace(/\D/g, "");
+  if (!phone) return undefined;
+
+  const message = [
+    `Hola ${booking.name}, te recordamos tu turno de ${booking.service}.`,
+    `Es el ${formatDate(booking.date)} a las ${booking.time} hs.`,
+    "¡Te esperamos!",
+  ].join(" ");
+
+  return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+}
+
 const moneyFormatter = new Intl.NumberFormat("es-AR", {
   style: "currency",
   currency: "ARS",
@@ -1489,6 +1502,7 @@ export default function AdminPage({
                   {paginatedBookings.map((b) => {
                     const expanded = expandedBookingId === b._id;
                     const phoneHref = b.phone ? `tel:${b.phone.replace(/[^\d+]/g, "")}` : undefined;
+                    const reminderHref = b.status !== "cancelled" && b.status !== "done" ? whatsappReminderHref(b) : undefined;
                     return (
                       <li
                         key={b._id}
@@ -1573,6 +1587,20 @@ export default function AdminPage({
                             </div>
 
                             <div className="mt-3 flex flex-wrap gap-2 border-t border-[var(--border)] pt-3">
+                              {reminderHref && (
+                                <a
+                                  href={reminderHref}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  aria-label={`Enviar recordatorio de WhatsApp a ${b.name}`}
+                                  className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border border-emerald-400/35 bg-emerald-500/12 px-3 py-2 text-[12.5px] font-bold text-emerald-300 transition hover:bg-emerald-500/20 sm:flex-none"
+                                >
+                                  <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                    <path d="M20.5 3.5A11.8 11.8 0 0 0 12.1 0C5.6 0 .3 5.3.3 11.8c0 2.1.6 4.1 1.6 5.8L.2 24l6.6-1.7a11.8 11.8 0 0 0 5.3 1.3h.1c6.5 0 11.8-5.3 11.8-11.8 0-3.2-1.3-6.1-3.5-8.3Zm-8.4 18.1h-.1c-1.7 0-3.4-.5-4.8-1.3l-.3-.2-3.9 1 1-3.8-.2-.3a9.8 9.8 0 1 1 8.3 4.6Zm5.4-7.3c-.3-.2-1.7-.8-2-.9-.3-.1-.5-.2-.7.2-.2.3-.7.9-.8 1.1-.2.2-.3.2-.6.1-1.6-.8-2.7-1.4-3.8-3.2-.3-.5.3-.5.8-1.6.1-.2.1-.4 0-.6s-.7-1.6-1-2.2c-.3-.6-.5-.5-.7-.5h-.6c-.2 0-.6.1-.9.4-.3.3-1.2 1.2-1.2 2.9s1.2 3.4 1.4 3.6c.2.2 2.4 3.7 5.8 5.1.8.4 1.5.6 2 .8.8.3 1.6.2 2.2.1.7-.1 1.7-.7 1.9-1.3.2-.6.2-1.2.1-1.3-.2-.2-.4-.3-.7-.5Z" />
+                                  </svg>
+                                  Recordatorio por WhatsApp
+                                </a>
+                              )}
                               {b.status !== "cancelled" && b.status !== "done" && (
                                 <>
                                   <SmallBtn
