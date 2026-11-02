@@ -79,6 +79,10 @@ function formatMoney(value: number) {
   return moneyFormatter.format(value);
 }
 
+function formatRevenueMoney(value: number) {
+  return `$${new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 }).format(value || 0)}`;
+}
+
 function normalizeTenantSlugPreview(value: string) {
   return value
     .trim()
@@ -166,17 +170,19 @@ function RevenueCard({
 }) {
   const navigable = Boolean(onPrevious && onNext);
   const colors = revenueToneClasses[tone];
+  const progress = period.total > 0 ? Math.min(100, Math.round((period.collected / period.total) * 100)) : 0;
+  const hasActivity = period.appointmentCount > 0 || period.total > 0;
   return (
-    <article className={`group relative overflow-hidden rounded-2xl border bg-[var(--bg-soft)] p-4 transition hover:-translate-y-0.5 hover:shadow-xl hover:shadow-black/15 sm:p-5 ${colors.border}`}>
+    <article className={`group relative overflow-hidden rounded-2xl border bg-[var(--bg-soft)] p-3.5 transition hover:-translate-y-0.5 hover:shadow-xl hover:shadow-black/15 sm:p-4 ${colors.border}`}>
       <div className={`absolute inset-x-0 top-0 h-px bg-gradient-to-r ${colors.line} to-transparent`} aria-hidden="true" />
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${colors.icon}`}>
+          <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${colors.icon}`}>
             <RevenueIcon name={icon} />
           </span>
           <div className="min-w-0">
             <p className="text-sm font-bold text-[var(--text)]">{label}</p>
-            <p className="mt-1 truncate text-[11px] font-semibold text-[var(--muted)]">
+            <p className="mt-1 truncate text-[10px] font-semibold text-[var(--muted)]">
               {periodCaption || `${formatRevenueDate(period.from)} – ${formatRevenueDate(period.to)}`}
             </p>
           </div>
@@ -208,28 +214,50 @@ function RevenueCard({
           </div>
         ) : null}
       </div>
-      <div className="mt-5 flex items-end justify-between gap-3">
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-emerald-300">Cobrado</p>
-          <p className="mt-1 text-[28px] font-black tracking-tight text-[var(--text)]">{formatMoney(period.collected)}</p>
+      <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--card)]/45 p-3.5">
+        <div className="flex items-end justify-between gap-3">
+          <div className="min-w-0">
+            <p className="flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-[0.14em] text-emerald-300">
+              <span className="grid h-4 w-4 place-items-center rounded-full bg-emerald-400/15" aria-hidden="true">✓</span>
+              Cobrado
+            </p>
+            <p className="mt-1 text-[27px] font-black tracking-tight text-[var(--text)]">{formatRevenueMoney(period.collected)}</p>
+            <p className="mt-1 text-[10px] font-semibold text-[var(--muted)]">
+              {hasActivity ? "Ingresos confirmados" : "Todavía no hay cobros"}
+            </p>
+          </div>
+          <span className="mb-1 shrink-0 rounded-full bg-[var(--card-2)] px-2.5 py-1 text-[10px] font-bold text-[var(--muted)]">
+            {period.appointmentCount} {period.appointmentCount === 1 ? "turno" : "turnos"}
+          </span>
         </div>
-        <span className="mb-1 shrink-0 rounded-full bg-[var(--card-2)] px-2.5 py-1 text-[11px] font-bold text-[var(--muted)]">
-          {period.appointmentCount} {period.appointmentCount === 1 ? "turno" : "turnos"}
-        </span>
+        <div className="mt-3">
+          <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px] font-semibold text-[var(--muted)]">
+            <span>{hasActivity ? "Avance del período" : "Sin reservas en este período"}</span>
+            <span>{progress}%</span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-[var(--card-2)]" aria-label={`${progress}% cobrado`}>
+            <div className={`h-full rounded-full bg-gradient-to-r ${colors.line} to-emerald-300 transition-[width] duration-500`} style={{ width: `${progress}%` }} />
+          </div>
+        </div>
       </div>
-      <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[var(--border)] pt-3 text-xs">
-        <div className="rounded-xl bg-[var(--card-2)] p-2.5">
-          <p className="text-[var(--muted)]">Total estimado</p>
-          <p className="mt-1 font-bold text-[var(--text)]">{formatMoney(period.total)}</p>
+      <div className="mt-3 grid grid-cols-2 gap-2.5 text-xs">
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--card-2)]/55 p-3">
+          <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--muted)]">
+            <span className="grid h-4 w-4 place-items-center rounded-full bg-blue-400/15 text-blue-300" aria-hidden="true">↗</span>
+            Total previsto
+          </p>
+          <p className="mt-2 text-base font-black text-[var(--text)]">{formatRevenueMoney(period.total)}</p>
+          <p className="mt-1 text-[10px] text-[var(--muted)]">{period.total > 0 ? "Turnos del período" : "Sin reservas todavía"}</p>
         </div>
-        <div className="rounded-xl bg-amber-300/[0.06] p-2.5">
-          <p className="flex items-center gap-1.5 text-[var(--muted)]">
+        <div className="rounded-xl border border-amber-300/15 bg-amber-300/[0.06] p-3">
+          <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.08em] text-amber-200/80">
             <span className="grid h-4 w-4 place-items-center rounded-full bg-amber-300/15 text-amber-200" aria-hidden="true">
               <svg width="10" height="10" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm.75-11.5a.75.75 0 0 0-1.5 0v3.75c0 .2.08.39.22.53l2.25 2.25a.75.75 0 0 0 1.06-1.06l-2.03-2.03V6.5Z" clipRule="evenodd" /></svg>
             </span>
-            Pendiente
+            Por cobrar
           </p>
-          <p className="mt-1 font-bold text-amber-200">{formatMoney(period.pending)}</p>
+          <p className="mt-2 text-base font-black text-amber-200">{formatRevenueMoney(period.pending)}</p>
+          <p className="mt-1 text-[10px] text-amber-100/50">{period.pending > 0 ? "Pendiente de cobro" : "Todo al día"}</p>
         </div>
       </div>
     </article>
