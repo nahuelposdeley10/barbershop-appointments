@@ -3,6 +3,7 @@ import Link from "next/link";
 import { cache } from "react";
 import { notFound } from "next/navigation";
 import Navbar from "./components/Navbar";
+import GalleryLightbox from "./components/GalleryLightbox";
 import { BarberPole } from "./components/booking/BarberIcons";
 import { connectDB } from "@/lib/db";
 import { getSettings } from "@/lib/booking-logic";
@@ -399,9 +400,9 @@ function Profesionales({ data }: { data: SiteData }) {
           {profesionales.map((prof) => (
             <div
               key={prof.nombre}
-              className="group relative rounded-2xl overflow-hidden border border-card-border hover:border-accent/40 transition-all w-full sm:w-[calc(50%-1rem)] lg:w-[calc(33.333%-1.3333rem)]"
+              className="group w-full overflow-hidden rounded-2xl border border-card-border bg-card transition-all hover:-translate-y-1 hover:border-accent/40 sm:w-[calc(50%-1rem)] lg:w-[calc(33.333%-1.3333rem)]"
             >
-              <div className="relative aspect-[3/4] overflow-hidden">
+              <div className="relative aspect-[3/4] overflow-hidden bg-zinc-900">
                 <Image
                   src={prof.img}
                   alt={prof.nombre}
@@ -409,9 +410,8 @@ function Profesionales({ data }: { data: SiteData }) {
                   sizes="(max-width: 768px) 100vw, 33vw"
                   className="object-cover transition-transform duration-500 group-hover:scale-105"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/20 to-transparent" />
               </div>
-              <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-6">
+              <div className="p-4 sm:p-6">
                 <h3 className="font-display text-2xl font-bold">{prof.nombre}</h3>
                 <p className="text-accent text-sm mb-3">{prof.rol}</p>
                 <div className="flex flex-wrap gap-2">
@@ -464,7 +464,6 @@ function Servicios({ data }: { data: SiteData }) {
                   sizes="(max-width: 768px) 100vw, 33vw"
                   className="object-cover transition-transform duration-500 group-hover:scale-105"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/60 to-transparent" />
               </div>
               <div className="p-4 sm:p-6">
                 <div className="flex items-center justify-between mb-1">
@@ -551,25 +550,7 @@ function Galeria({ data }: { data: SiteData }) {
           description="Mirá algunos de los trabajos que hacemos todos los días."
         />
 
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5 sm:gap-4">
-          {data.imgGaleria.map((src, i) => (
-            <div
-              key={i}
-              className="relative aspect-square rounded-xl overflow-hidden group cursor-pointer"
-            >
-              <Image
-                src={src}
-                alt={`Trabajo ${i + 1}`}
-                fill
-                sizes="(max-width: 768px) 50vw, 33vw"
-                className="object-cover transition-transform duration-500 group-hover:scale-110"
-              />
-              <div className="absolute inset-0 bg-zinc-950/0 group-hover:bg-zinc-950/40 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
-                <span className="text-accent">{Icons.scissors}</span>
-              </div>
-            </div>
-          ))}
-        </div>
+        <GalleryLightbox images={data.imgGaleria} />
       </div>
     </section>
   );
