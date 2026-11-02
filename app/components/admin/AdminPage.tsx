@@ -69,13 +69,15 @@ function formatDate(dateStr: string) {
   return `${DAY_NAMES[d.getDay()]} ${d.getDate()} de ${MONTH_NAMES[d.getMonth()]}`;
 }
 
-function whatsappReminderHref(booking: AdminBooking) {
+function whatsappReminderHref(booking: AdminBooking, businessName?: string | null) {
   const phone = booking.phone?.replace(/\D/g, "");
   if (!phone) return undefined;
 
+  const dateLabel = booking.date === localDateStr(new Date()) ? "hoy" : `el ${formatDate(booking.date)}`;
+  const sender = businessName ? ` desde ${businessName}` : "";
   const message = [
-    `Hola ${booking.name}, te recordamos tu turno de ${booking.service}.`,
-    `Es el ${formatDate(booking.date)} a las ${booking.time} hs.`,
+    `Hola ${booking.name}, te escribimos${sender} para recordarte tu turno de ${booking.service} ${dateLabel} a las ${booking.time} hs.`,
+    "Si necesitás reprogramarlo, por favor avisanos con anticipación.",
     "¡Te esperamos!",
   ].join(" ");
 
@@ -1502,7 +1504,7 @@ export default function AdminPage({
                   {paginatedBookings.map((b) => {
                     const expanded = expandedBookingId === b._id;
                     const phoneHref = b.phone ? `tel:${b.phone.replace(/[^\d+]/g, "")}` : undefined;
-                    const reminderHref = b.status !== "cancelled" && b.status !== "done" ? whatsappReminderHref(b) : undefined;
+                    const reminderHref = b.status !== "cancelled" && b.status !== "done" ? whatsappReminderHref(b, activeTenantName) : undefined;
                     return (
                       <li
                         key={b._id}
