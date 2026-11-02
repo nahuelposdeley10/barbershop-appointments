@@ -8,6 +8,7 @@ import { BarberPole } from "../booking/BarberIcons";
 export default function AdminLogin({ onLogin }: { onLogin: () => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -83,15 +84,38 @@ export default function AdminLogin({ onLogin }: { onLogin: () => void }) {
             </label>
             <label className="flex flex-col gap-1 text-sm font-semibold text-zinc-200 sm:gap-1.5">
               <span>Contraseña</span>
-              <input
-                type="password"
-                className="w-full rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] px-3.5 py-2.5 text-[var(--text)] outline-none transition placeholder:text-zinc-600 focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20 sm:py-3"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Tu contraseña"
-                autoComplete="current-password"
-                required
-              />
+              <span className="relative block">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  className="w-full rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] px-3.5 py-2.5 pr-12 text-[var(--text)] outline-none transition placeholder:text-zinc-600 focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20 sm:py-3"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Tu contraseña"
+                  autoComplete="current-password"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((visible) => !visible)}
+                  aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                  aria-pressed={showPassword}
+                  title={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                  className="absolute inset-y-0 right-1.5 grid w-10 place-items-center rounded-lg text-zinc-400 transition hover:text-[var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/60"
+                >
+                  {showPassword ? (
+                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M3 3l18 18" />
+                      <path d="M10.6 10.7a2 2 0 0 0 2.7 2.7" />
+                      <path d="M9.4 5.2A10.8 10.8 0 0 1 12 4.9c5.5 0 9 5.1 9 7.1a8.8 8.8 0 0 1-2.1 3.2M6.2 6.3C3.9 7.8 3 10.5 3 12c0 2 3.5 7.1 9 7.1a9.6 9.6 0 0 0 4.3-1" />
+                    </svg>
+                  ) : (
+                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M2.5 12s3.4-7 9.5-7 9.5 7 9.5 7-3.4 7-9.5 7-9.5-7-9.5-7Z" />
+                      <circle cx="12" cy="12" r="2.7" />
+                    </svg>
+                  )}
+                </button>
+              </span>
             </label>
             <button
               type="submit"
