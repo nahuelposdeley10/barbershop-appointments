@@ -21,6 +21,7 @@ import { BarberPole, ServiceIcon } from "../booking/BarberIcons";
 import Navbar, { type AdminPanelTab } from "../Navbar";
 import ConfirmDialog from "../ConfirmDialog";
 import StatusToast from "../StatusToast";
+import PushNotificationSettings from "./PushNotificationSettings";
 
 const DAY_NAMES = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const MONTH_NAMES = [
@@ -2157,6 +2158,7 @@ export default function AdminPage({
             </p>
 
             <h3 className="text-[15px] font-extrabold text-accent mt-1.5">Avisos de nuevas reservas</h3>
+            <PushNotificationSettings />
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-soft)] p-3.5 sm:p-4">
               <label className="flex cursor-pointer items-start justify-between gap-4">
                 <span className="min-w-0">

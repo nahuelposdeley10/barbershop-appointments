@@ -137,6 +137,12 @@ export type SuperadminTenant = {
   ownerId: { email: string };
 };
 
+export type AdminPushStatus = {
+  configured: boolean;
+  publicKey: string;
+  subscriptionCount: number;
+};
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     ...options,
@@ -219,6 +225,31 @@ export function adminLogin(email: string, password: string): Promise<{ authentic
 
 export function adminSession(): Promise<AdminSession> {
   return request("/admin/session");
+}
+
+export function adminGetPushStatus(): Promise<AdminPushStatus> {
+  return request("/admin/push");
+}
+
+export function adminSavePushSubscription(subscription: PushSubscriptionJSON): Promise<{ ok: true }> {
+  return request("/admin/push", {
+    method: "POST",
+    body: JSON.stringify(subscription),
+  });
+}
+
+export function adminDeletePushSubscription(endpoint: string): Promise<{ ok: true }> {
+  return request("/admin/push", {
+    method: "DELETE",
+    body: JSON.stringify({ endpoint }),
+  });
+}
+
+export function adminTestPushSubscription(endpoint: string): Promise<{ ok: true }> {
+  return request("/admin/push/test", {
+    method: "POST",
+    body: JSON.stringify({ endpoint }),
+  });
 }
 
 export function superadminGetTenants(_token?: string): Promise<SuperadminTenant[]> {
