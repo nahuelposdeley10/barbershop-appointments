@@ -455,7 +455,7 @@ export default function AdminPage({
   useEffect(() => {
     if (role !== "owner" || tab !== "agenda") return;
     let cancelled = false;
-    adminGetBookings(token, { date, status: status || undefined })
+    adminGetBookings(token, { date })
       .then((list) => {
         if (!cancelled) {
           setBookings(list);
@@ -472,7 +472,7 @@ export default function AdminPage({
     return () => {
       cancelled = true;
     };
-  }, [token, role, tab, date, status]);
+  }, [token, role, tab, date]);
 
   useEffect(() => {
     if (role !== "superadmin" || tab !== "superadmin") return;
@@ -544,7 +544,7 @@ export default function AdminPage({
         id,
         newStatus === "done" ? { status: "done", paymentStatus: "paid" } : newStatus
       );
-      const list = await adminGetBookings(token, { date, status: status || undefined });
+      const list = await adminGetBookings(token, { date });
       setBookings(list);
       setRevenueRefresh((value) => value + 1);
       showAgendaMessage(newStatus === "done" ? "Turno marcado como completado y sumado a cobrado." : "Estado del turno actualizado.");
@@ -652,10 +652,7 @@ export default function AdminPage({
     try {
       await adminCreateBooking(token, manualBookingForm);
       setDate(manualBookingForm.date);
-      const list = await adminGetBookings(token, {
-        date: manualBookingForm.date,
-        status: status || undefined,
-      });
+      const list = await adminGetBookings(token, { date: manualBookingForm.date });
       setBookings(list);
       setRevenueRefresh((value) => value + 1);
       setAgendaMessage("Servicio registrado como completado y sumado al resumen.");
@@ -668,7 +665,6 @@ export default function AdminPage({
   }
 
   function selectStatus(nextStatus: string) {
-    setLoading(true);
     setStatus(nextStatus);
     setPage(1);
     setExpandedBookingId(null);
@@ -690,7 +686,7 @@ export default function AdminPage({
     setError("");
     try {
       await adminDeleteBooking(token, bookingToDelete.id);
-      const list = await adminGetBookings(token, { date, status: status || undefined });
+      const list = await adminGetBookings(token, { date });
       setBookings(list);
       setRevenueRefresh((value) => value + 1);
       setBookingToDelete(null);
@@ -800,7 +796,7 @@ export default function AdminPage({
     addBlockDate(blockedDate);
     if (blockedDate === date) {
       try {
-        const list = await adminGetBookings(token, { date, status: status || undefined });
+        const list = await adminGetBookings(token, { date });
         setBookings(list);
       } catch {
         // La agenda se refresca sola al cambiar de día.
@@ -993,6 +989,7 @@ export default function AdminPage({
   ];
   const selectedStatus = statusOptions.find((option) => option.value === status) ?? statusOptions[0];
   const visibleBookings = bookings.filter((booking) => {
+    if (status && booking.status !== status) return false;
     const query = search.trim().toLowerCase();
     if (!query) return true;
     return [booking.name, booking.phone, booking.service].some((value) =>
@@ -1217,9 +1214,9 @@ export default function AdminPage({
                   icon="calendar"
                   tone="blue"
                   periodCaption={revenuePeriodLabel("día", dayRevenueOffset)}
-                  onPrevious={() => setDayRevenueOffset((value) => Math.min(4, value + 1))}
+                  onPrevious={() => setDayRevenueOffset((value) => Math.min(7, value + 1))}
                   onNext={() => setDayRevenueOffset((value) => Math.max(0, value - 1))}
-                  previousDisabled={dayRevenueOffset >= 4}
+                  previousDisabled={dayRevenueOffset >= 7}
                   nextDisabled={dayRevenueOffset === 0}
                 />
                 <RevenueCard
@@ -1239,9 +1236,9 @@ export default function AdminPage({
                   icon="month"
                   tone="amber"
                   periodCaption={revenuePeriodLabel("mes", monthRevenueOffset)}
-                  onPrevious={() => setMonthRevenueOffset((value) => Math.min(4, value + 1))}
+                  onPrevious={() => setMonthRevenueOffset((value) => Math.min(3, value + 1))}
                   onNext={() => setMonthRevenueOffset((value) => Math.max(0, value - 1))}
-                  previousDisabled={monthRevenueOffset >= 4}
+                  previousDisabled={monthRevenueOffset >= 3}
                   nextDisabled={monthRevenueOffset === 0}
                 />
                 <RevenueCard label="Dinero global" period={revenue.global} icon="coins" tone="green" periodCaption="Desde el inicio" />

@@ -4,6 +4,7 @@ import { connectDB } from "@/lib/db";
 import { localDateStr } from "@/lib/booking-logic";
 import { getAdminContext } from "@/lib/auth";
 import { Booking } from "@/lib/models/Booking";
+import { RevenueArchive } from "@/lib/models/RevenueArchive";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,10 +17,10 @@ function shiftDate(date: string, days: number) {
   return value.toISOString().slice(0, 10);
 }
 
-function getOffset(value: string | null) {
+function getOffset(value: string | null, max: number) {
   const parsed = Number(value || 0);
   if (!Number.isInteger(parsed) || parsed < 0) return 0;
-  return Math.min(parsed, 4);
+  return Math.min(parsed, max);
 }
 
 function getRanges(today: string, dayOffset: number, weekOffset: number, monthOffset: number): Record<"today" | "week" | "month" | "global", RevenueRange> {
@@ -95,6 +96,27 @@ async function summarize(range: RevenueRange, tenantId: string) {
   };
 }
 
+async function summarizeArchive(tenantId: string) {
+  const [summary] = await RevenueArchive.aggregate([
+    { $match: { tenantId: new mongoose.Types.ObjectId(tenantId) } },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: "$total" },
+        collected: { $sum: "$collected" },
+        pending: { $sum: "$pending" },
+        appointmentCount: { $sum: "$appointmentCount" },
+      },
+    },
+  ]);
+  return {
+    total: Number(summary?.total || 0),
+    collected: Number(summary?.collected || 0),
+    pending: Number(summary?.pending || 0),
+    appointmentCount: Number(summary?.appointmentCount || 0),
+  };
+}
+
 export async function GET(req: NextRequest) {
   try {
     const context = await getAdminContext(req);
@@ -107,16 +129,27 @@ export async function GET(req: NextRequest) {
     const today = localDateStr(new Date());
     const ranges = getRanges(
       today,
-      getOffset(req.nextUrl.searchParams.get("dayOffset")),
-      getOffset(req.nextUrl.searchParams.get("weekOffset")),
-      getOffset(req.nextUrl.searchParams.get("monthOffset"))
+      getOffset(req.nextUrl.searchParams.get("dayOffset"), 7),
+      getOffset(req.nextUrl.searchParams.get("weekOffset"), 4),
+      getOffset(req.nextUrl.searchParams.get("monthOffset"), 3)
     );
+    const [globalLive, archived] = await Promise.all([
+      summarize(ranges.global, context.tenantId),
+      summarizeArchive(context.tenantId),
+    ]);
+    const global = {
+      ...globalLive,
+      total: globalLive.total + archived.total,
+      collected: globalLive.collected + archived.collected,
+      pending: globalLive.pending + archived.pending,
+      appointmentCount: globalLive.appointmentCount + archived.appointmentCount,
+    };
     return Response.json({
       asOf: today,
       today: await summarize(ranges.today, context.tenantId),
       week: await summarize(ranges.week, context.tenantId),
       month: await summarize(ranges.month, context.tenantId),
-      global: await summarize(ranges.global, context.tenantId),
+      global,
     });
   } catch (error) {
     console.error(error);
