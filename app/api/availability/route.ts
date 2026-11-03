@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
       const duration = service ? service.duration : settings.slotMinutes;
       const sillas = Math.max(1, settings.cantidadBarberos || 1);
       const openings = await Booking.find({ ...tenantFilter(tenantId), date, status: { $ne: "cancelled" } })
-        .select("time duration")
+        .select("_id name service duration price date time")
         .lean();
       const now = new Date();
       const nowMinutes = localMinutes(now);
@@ -67,7 +67,18 @@ export async function GET(req: NextRequest) {
             overlaps(start, duration, toMinutes(b.time), b.duration)
           ).length;
           const free = !past && ocupadas < sillas;
-          return { time, free, ocupadas, sillas };
+          const bookings = openings
+            .filter((booking) => booking.time === time)
+            .map((booking) => ({
+              id: String(booking._id),
+              name: booking.name,
+              service: booking.service,
+              duration: booking.duration,
+              price: booking.price,
+              date: booking.date,
+              time: booking.time,
+            }));
+          return { time, free, ocupadas, sillas, bookings };
         });
     }
 

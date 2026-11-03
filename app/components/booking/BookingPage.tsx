@@ -5,10 +5,10 @@ import Image from "next/image";
 import {
   createBooking,
   cancelBooking,
-  findManagedBookings,
   getManagedBooking,
   getAvailability,
   updateBookingSchedule,
+  AvailabilityBooking,
   BookingConfirmation,
   Service,
   Slot,
@@ -39,7 +39,6 @@ function loadTermsAccepted() {
     return false;
   }
 }
-
 function persistTermsAccepted() {
   try {
     window.localStorage.setItem(TERMS_STORAGE_KEY, "1");
@@ -154,7 +153,6 @@ function inactiveNotice(booking: { status?: string }) {
 
 type VerifyDeps = {
   setBookings: Dispatch<SetStateAction<BookingConfirmation[]>>;
-  setVerifying: Dispatch<SetStateAction<boolean>>;
   setBookingNotice: Dispatch<SetStateAction<string>>;
 };
 
@@ -175,9 +173,7 @@ async function verifyBookings(
   isAlive: () => boolean = () => true
 ) {
   if (tokens.length === 0) return;
-  deps.setVerifying(true);
-  try {
-    const results: VerifyResult[] = await Promise.all(
+  const results: VerifyResult[] = await Promise.all(
       tokens.map(async (token): Promise<VerifyResult> => {
         let booking: BookingConfirmation;
         try {
@@ -191,25 +187,25 @@ async function verifyBookings(
         if (!isBookingActive(merged)) return { token, kind: "inactive", booking: merged };
         return { token, kind: "active", booking: merged };
       })
-    );
-    if (!isAlive()) return;
+  );
+  if (!isAlive()) return;
 
-    const messages: string[] = [];
-    for (const result of results) {
+  const messages: string[] = [];
+  for (const result of results) {
       if (result.kind === "inactive") messages.push(inactiveNotice(result.booking));
       else if (result.kind === "gone") {
         messages.push("Uno de tus turnos ya no está disponible y se quitó de la lista.");
       }
-    }
-    const notice =
+  }
+  const notice =
       messages.length === 1
         ? messages[0]
         : messages.length > 1
           ? "Algunos de tus turnos ya no están activos y se quitaron de la lista."
           : "";
 
-    const byToken = new Map(results.map((result) => [result.token, result]));
-    deps.setBookings((prev) =>
+  const byToken = new Map(results.map((result) => [result.token, result]));
+  deps.setBookings((prev) =>
       prev.flatMap((entry) => {
         const token = entry.manageToken || "";
         const result = byToken.get(token);
@@ -218,11 +214,8 @@ async function verifyBookings(
         if (result.kind === "inactive") return [];
         return [{ ...result.booking, manageToken: token, address: entry.address }];
       })
-    );
-    if (notice) deps.setBookingNotice(notice);
-  } finally {
-    if (isAlive()) deps.setVerifying(false);
-  }
+  );
+  if (notice) deps.setBookingNotice(notice);
 }
 
 export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
@@ -257,6 +250,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
   const [cancellingToken, setCancellingToken] = useState<string | null>(null);
   const [bookingToCancel, setBookingToCancel] = useState<BookingConfirmation | null>(null);
   const [bookingToEdit, setBookingToEdit] = useState<BookingConfirmation | null>(null);
+  const [bookingChoices, setBookingChoices] = useState<AvailabilityBooking[] | null>(null);
   const [editService, setEditService] = useState("");
   const [editDate, setEditDate] = useState("");
   const [editTime, setEditTime] = useState("");
@@ -266,14 +260,9 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState("");
   const [hydrated, setHydrated] = useState(false);
-  const [verifying, setVerifying] = useState(false);
   const [bookingNotice, setBookingNotice] = useState("");
   const [cancelError, setCancelError] = useState("");
   const [cancelPassword, setCancelPassword] = useState("");
-  const [manageFormOpen, setManageFormOpen] = useState(false);
-  const [managePassword, setManagePassword] = useState("");
-  const [manageLoading, setManageLoading] = useState(false);
-  const [manageError, setManageError] = useState("");
   const didHydrate = useRef(false);
 
   const freeCount = slots.filter((s) => s.free).length;
@@ -303,7 +292,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
         // Verificamos en segundo plano sin bloquear la página.
         void verifyBookings(
           activeList.map((entry) => entry.manageToken || "").filter(Boolean),
-          { setBookings, setVerifying, setBookingNotice }
+          { setBookings, setBookingNotice }
         );
       }
     });
@@ -317,7 +306,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
 
     const syncBookings = () => {
       if (!alive) return;
-      void verifyBookings(tokens, { setBookings, setVerifying, setBookingNotice }, () => alive);
+      void verifyBookings(tokens, { setBookings, setBookingNotice }, () => alive);
     };
 
     const intervalId = window.setInterval(syncBookings, 60_000);
@@ -398,6 +387,26 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
     };
   }, [bookingToEdit, editDate, editService, tenantSlug]);
 
+  useEffect(() => {
+    if (!bookingToEdit && !bookingChoices) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !editSaving) {
+        setBookingChoices(null);
+        setBookingToEdit(null);
+        setEditError("");
+        setEditPassword("");
+        setEditSlots([]);
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [bookingToEdit, bookingChoices, editSaving]);
+
   async function refreshSlots() {
     try {
       const data = await getAvailability(date || today, selectedService, tenantSlug);
@@ -453,7 +462,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
           : prev
       );
       setBookingNotice(
-        `Turno reservado: ${booking.service} · ${formatDate(booking.date)} · ${booking.time} h. Queda guardado en este dispositivo.`
+        `Turno reservado: ${booking.service} · ${formatDate(booking.date)} · ${booking.time} h. Para editarlo, volvé a ese día y tocá el turno reservado.`
       );
       setCancelError("");
       setBookingPassword("");
@@ -461,9 +470,6 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
       setDate("");
       setSelectedSlot("");
       setSelectedService("");
-      window.requestAnimationFrame(() =>
-        document.getElementById("mis-turnos")?.scrollIntoView({ behavior: "smooth", block: "start" })
-      );
       await refreshSlots();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Error inesperado";
@@ -499,9 +505,41 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
     setBookingToEdit(booking);
   }
 
+  function handleEditAvailabilityBooking(booking: AvailabilityBooking) {
+    handleEditBooking({
+      _id: booking.id,
+      name: booking.name,
+      phone: "",
+      service: booking.service,
+      duration: booking.duration,
+      price: booking.price,
+      date: booking.date,
+      time: booking.time,
+      status: "confirmed",
+      manageId: booking.id,
+      managePasswordRequired: true,
+    });
+  }
+
+  function handleReservedSlotClick(reservedBookings: AvailabilityBooking[]) {
+    if (reservedBookings.length === 1) {
+      handleEditAvailabilityBooking(reservedBookings[0]);
+      return;
+    }
+    setBookingChoices(reservedBookings);
+  }
+
+  function requestCancelFromEditor() {
+    if (!bookingToEdit) return;
+    const booking = bookingToEdit;
+    closeEditBooking();
+    handleCancelBooking(booking);
+  }
+
   function closeEditBooking(force = false) {
     if (editSaving && !force) return;
     setBookingToEdit(null);
+    setBookingChoices(null);
     setEditError("");
     setEditPassword("");
     setEditSlots([]);
@@ -566,42 +604,11 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
       setBookingNotice("El turno fue cancelado y el horario ya quedó liberado.");
       setBookingToCancel(null);
       setCancelPassword("");
+      await refreshSlots();
     } catch (err) {
       setCancelError(err instanceof Error ? err.message : "No pudimos cancelar el turno");
     } finally {
       setCancellingToken(null);
-    }
-  }
-
-  async function handleFindManagedBookings(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setManageError("");
-    if (managePassword.length < 6) {
-      setManageError("Ingresá la contraseña que usaste al reservar");
-      return;
-    }
-    setManageLoading(true);
-    try {
-      const found = await findManagedBookings(managePassword, tenantSlug);
-      const next = [
-        ...found,
-        ...bookings.filter((current) => !found.some((item) => item._id === current._id)),
-      ];
-      setBookings(next);
-      setManageFormOpen(false);
-      setManagePassword("");
-      setBookingNotice(
-        found.length === 1
-          ? "Encontramos tu turno. Desde acá podés cancelarlo si lo necesitás."
-          : `Encontramos ${found.length} turnos activos. Desde acá podés gestionarlos.`
-      );
-      window.requestAnimationFrame(() =>
-        document.getElementById("mis-turnos")?.scrollIntoView({ behavior: "smooth", block: "start" })
-      );
-    } catch (err) {
-      setManageError(err instanceof Error ? err.message : "No pudimos buscar tus turnos");
-    } finally {
-      setManageLoading(false);
     }
   }
 
@@ -641,24 +648,6 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
               Reservá tu turno
             </h1>
             <p className="text-[#e7e2d8] drop-shadow text-[13px] sm:text-sm">{message}</p>
-            {bookings.length > 0 && (
-              <a
-                href="#mis-turnos"
-                className="mt-1 inline-flex min-h-10 items-center justify-center rounded-full border border-white/30 bg-black/25 px-4 text-xs font-extrabold text-white backdrop-blur-sm transition hover:bg-black/40"
-              >
-                Ver mis turnos ({bookings.length})
-              </a>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                setManageFormOpen(true);
-                setManageError("");
-              }}
-              className="mt-1 inline-flex min-h-10 items-center justify-center rounded-full border border-accent/45 bg-accent/15 px-4 text-xs font-extrabold text-accent backdrop-blur-sm transition hover:bg-accent/25"
-            >
-              Gestionar un turno
-            </button>
           </div>
         </section>
 
@@ -672,96 +661,6 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
             )
           )}
         </div>
-
-        {manageFormOpen && (
-          <section className="rounded-[22px] border border-[var(--accent)] bg-[var(--card)] p-4 shadow-[0_18px_60px_rgba(0,0,0,0.18)] sm:p-[22px]">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-[10px] font-extrabold uppercase tracking-[2px] text-accent">Acceso seguro</p>
-                <h2 className="mt-1 text-[21px] font-bold">Gestioná tu turno</h2>
-                <p className="mt-1 text-sm text-[var(--muted)]">
-                  Usá la contraseña que elegiste al reservar, incluso desde otro dispositivo.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setManageFormOpen(false);
-                  setManageError("");
-                }}
-                className="min-h-10 shrink-0 rounded-xl border border-[var(--border)] px-3 text-sm font-bold text-[var(--muted)] hover:text-[var(--text)]"
-              >
-                Cerrar
-              </button>
-            </div>
-            <form className="mt-4 flex flex-col gap-3" onSubmit={handleFindManagedBookings}>
-              <Field label="Contraseña del turno">
-                <input
-                  className="w-full rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] px-3.5 py-3 text-[var(--text)]"
-                  type="password"
-                  value={managePassword}
-                  onChange={(event) => setManagePassword(event.target.value)}
-                  placeholder="Mínimo 6 caracteres"
-                  minLength={6}
-                  maxLength={72}
-                  autoComplete="current-password"
-                />
-              </Field>
-              {manageError && <p role="alert" className="text-sm font-semibold text-[var(--red)]">{manageError}</p>}
-              <button
-                type="submit"
-                disabled={manageLoading}
-                className="min-h-11 rounded-xl bg-gradient-to-b from-[var(--accent)] to-[var(--accent-strong)] px-4 py-3 font-extrabold text-[#1a1406] disabled:opacity-60"
-              >
-                {manageLoading ? "Buscando…" : "Buscar mis turnos"}
-              </button>
-            </form>
-          </section>
-        )}
-
-        {/* Mis turnos */}
-        {bookings.length > 0 && (
-          <section
-            id="mis-turnos"
-            aria-labelledby="mis-turnos-titulo"
-            className="scroll-mt-24 bg-[var(--card)] border border-[var(--accent)] rounded-[22px] sm:rounded-2xl p-3.5 sm:p-[22px] flex flex-col gap-3 sm:gap-3.5 shadow-[0_18px_60px_rgba(0,0,0,0.18)]"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2
-                id="mis-turnos-titulo"
-                className="text-[19px] sm:text-[26px] font-bold tracking-[-0.3px] flex items-center gap-2"
-              >
-                Tus turnos
-                <span className="inline-grid place-items-center min-w-6 h-6 sm:min-w-7 sm:h-7 px-1.5 rounded-full bg-accent/15 text-accent text-[12px] sm:text-[13px] font-extrabold">
-                  {bookings.length}
-                </span>
-              </h2>
-              {verifying && (
-                <span className="text-xs font-semibold text-[var(--muted)]">Actualizando…</span>
-              )}
-            </div>
-            <p className="text-[var(--muted)] text-[13px] sm:text-sm -mt-1">
-              También podés recuperarlos desde otro dispositivo con tu teléfono y la contraseña del turno.
-            </p>
-            {cancelError && (
-              <p role="alert" className="text-sm font-semibold text-[var(--red)]">{cancelError}</p>
-            )}
-            <ul className="list-none m-0 p-0 flex flex-col gap-2.5">
-              {bookings.map((booking) => (
-                <TurnoCard
-                  key={booking.manageToken || booking._id}
-                  booking={booking}
-                  cancelling={cancellingToken === booking.manageToken}
-                  disabled={Boolean(cancellingToken)}
-                  onEdit={() => handleEditBooking(booking)}
-                  onCancel={() => {
-                    handleCancelBooking(booking);
-                  }}
-                />
-              ))}
-            </ul>
-          </section>
-        )}
 
         <ConfirmDialog
           open={Boolean(bookingToCancel)}
@@ -798,11 +697,91 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
           )}
         </ConfirmDialog>
 
+        {bookingChoices && (
+          <div
+            className="fixed inset-0 z-[100] flex items-end justify-center bg-black/75 p-3 backdrop-blur-sm sm:items-center sm:p-6"
+            role="presentation"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) setBookingChoices(null);
+            }}
+          >
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="booking-choice-title"
+              className="w-full max-w-md rounded-[26px] border border-accent/35 bg-[var(--card)] shadow-2xl shadow-black/50"
+            >
+              <div className="h-1 bg-gradient-to-r from-accent via-amber-300 to-transparent" aria-hidden="true" />
+              <div className="p-4 sm:p-6">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="inline-flex items-center gap-1.5 rounded-full border border-accent/30 bg-accent/10 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[1.5px] text-accent">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                        <circle cx="9" cy="7" r="4" />
+                        <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+                      </svg>
+                      Más de un turno
+                    </p>
+                    <h2 id="booking-choice-title" className="mt-3 text-[22px] font-extrabold tracking-tight sm:text-2xl">¿Cuál querés editar?</h2>
+                    <p className="mt-1.5 text-sm leading-5 text-[var(--muted)]">
+                      Hay {bookingChoices.length} turnos reservados para las {bookingChoices[0]?.time} h. Elegí uno para continuar.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="Cerrar selección de turno"
+                    onClick={() => setBookingChoices(null)}
+                    className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-[var(--border)] bg-[var(--bg-soft)] text-[var(--muted)] transition hover:border-accent/50 hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                      <path d="M6 6l12 12M18 6 6 18" />
+                    </svg>
+                  </button>
+                </div>
+
+                <div className="mt-5 flex flex-col gap-2">
+                  {bookingChoices.map((booking, index) => (
+                    <button
+                      key={booking.id}
+                      type="button"
+                      onClick={() => {
+                        setBookingChoices(null);
+                        handleEditAvailabilityBooking(booking);
+                      }}
+                      className="flex min-h-[68px] items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--bg-soft)] px-3.5 py-3 text-left transition hover:border-accent/50 hover:bg-accent/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                    >
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-accent/25 bg-accent/10 text-accent" aria-hidden="true">
+                        <span className="text-sm font-extrabold">{index + 1}</span>
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-extrabold text-[var(--text)]">{booking.name}</span>
+                        <span className="mt-0.5 block truncate text-xs text-[var(--muted)]">{booking.service} · {booking.time} h</span>
+                      </span>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-accent" aria-hidden="true">
+                        <path d="m9 18 6-6-6-6" />
+                      </svg>
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setBookingChoices(null)}
+                  className="mt-4 min-h-11 w-full rounded-xl border border-[var(--border)] px-4 py-2.5 text-sm font-bold text-[var(--muted)] transition hover:border-accent/40 hover:text-[var(--text)]"
+                >
+                  Volver
+                </button>
+              </div>
+            </section>
+          </div>
+        )}
+
         {bookingToEdit && (
           <div
-            className="fixed inset-0 z-[100] flex items-end justify-center bg-black/70 p-3 backdrop-blur-[2px] sm:items-center sm:p-6"
+            className="fixed inset-0 z-[100] flex items-end justify-center bg-black/75 p-3 backdrop-blur-sm sm:items-center sm:p-6"
             role="presentation"
-            onMouseDown={(event) => {
+            onClick={(event) => {
               if (event.target === event.currentTarget) closeEditBooking();
             }}
           >
@@ -810,17 +789,42 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
               role="dialog"
               aria-modal="true"
               aria-labelledby="edit-booking-title"
-              className="max-h-[90svh] w-full max-w-md overflow-y-auto rounded-[24px] border border-accent/35 bg-[var(--card)] shadow-2xl shadow-black/40"
+              className="max-h-[min(90svh,680px)] w-full max-w-lg overflow-y-auto rounded-[26px] border border-accent/35 bg-[var(--card)] shadow-2xl shadow-black/50"
             >
               <div className="h-1 bg-gradient-to-r from-accent via-amber-300 to-transparent" aria-hidden="true" />
-              <div className="p-5 sm:p-6">
-                <p className="text-[10px] font-extrabold uppercase tracking-[2px] text-accent">Gestionar turno</p>
-                <h2 id="edit-booking-title" className="mt-1 text-xl font-extrabold">Cambiar servicio u horario</h2>
-                <p className="mt-1.5 text-sm leading-5 text-[var(--muted)]">
-                  Elegí una nueva opción. El cambio se confirma solo si el horario sigue disponible.
-                </p>
-                <div className="mt-4 flex flex-col gap-3">
-                  <Field label="Servicio">
+              <div className="p-4 sm:p-6">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="inline-flex items-center gap-1.5 rounded-full border border-accent/30 bg-accent/10 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[1.5px] text-accent">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                        <path d="M12 8v4l2.5 2.5" />
+                        <circle cx="12" cy="12" r="9" />
+                      </svg>
+                      Editar reserva
+                    </p>
+                    <h2 id="edit-booking-title" className="mt-3 text-[22px] font-extrabold tracking-tight sm:text-2xl">Modificá tu turno</h2>
+                    <p className="mt-1.5 max-w-md text-sm leading-5 text-[var(--muted)]">
+                      Elegí un nuevo servicio, fecha u horario. El cambio se confirma solo si sigue disponible.
+                    </p>
+                    <p className="mt-3 text-xs font-semibold text-[var(--muted)]">
+                      Cliente: <span className="text-[var(--text)]">{bookingToEdit.name}</span>
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="Cerrar editor de turno"
+                    onClick={() => closeEditBooking()}
+                    className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-[var(--border)] bg-[var(--bg-soft)] text-[var(--muted)] transition hover:border-accent/50 hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                      <path d="M6 6l12 12M18 6 6 18" />
+                    </svg>
+                  </button>
+                </div>
+
+                <div className="mt-5 grid grid-cols-2 gap-2.5">
+                  <div className="col-span-2">
+                    <Field label="Servicio">
                     <select
                       value={editService}
                       onChange={(event) => {
@@ -833,7 +837,8 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
                     >
                       {services.map((service) => <option key={service.name} value={service.name}>{service.name}</option>)}
                     </select>
-                  </Field>
+                    </Field>
+                  </div>
                   <Field label="Fecha">
                     <input
                       type="date"
@@ -862,8 +867,9 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
                       ))}
                     </select>
                   </Field>
-                  {(bookingToEdit.managePasswordRequired || bookingToEdit.manageId) && (
-                    <Field label="Contraseña del turno">
+                  <div className="col-span-2">
+                    {(bookingToEdit.managePasswordRequired || bookingToEdit.manageId) && (
+                      <Field label="Contraseña del turno">
                       <input
                         type="password"
                         value={editPassword}
@@ -874,13 +880,16 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
                         autoComplete="current-password"
                         className="w-full rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] px-3.5 py-3 text-[var(--text)]"
                       />
-                    </Field>
-                  )}
+                      </Field>
+                    )}
+                  </div>
+
                   {editError && <p role="alert" className="text-sm font-semibold text-[var(--red)]">{editError}</p>}
                 </div>
-                <div className="mt-5 flex flex-col-reverse gap-2.5 sm:flex-row sm:justify-end">
-                  <button type="button" disabled={editSaving} onClick={() => closeEditBooking()} className="min-h-11 rounded-xl border border-[var(--border)] px-4 py-2.5 text-sm font-bold text-[var(--muted)] disabled:opacity-50 sm:min-w-28">Volver</button>
-                  <button type="button" disabled={editSaving || editLoading || !editTime} onClick={confirmEditBooking} className="min-h-11 rounded-xl bg-gradient-to-b from-accent to-accent-strong px-4 py-2.5 text-sm font-extrabold text-[#1a1406] disabled:opacity-60 sm:min-w-36">{editSaving ? "Guardando…" : "Guardar cambio"}</button>
+                <div className="mt-5 flex items-center gap-2 border-t border-[var(--border)] pt-4">
+                  <button type="button" disabled={editSaving} onClick={requestCancelFromEditor} className="min-h-10 shrink-0 rounded-lg px-2 text-[11px] font-bold text-red-300 transition hover:bg-red-500/10 disabled:opacity-50 sm:px-3 sm:text-xs">Cancelar</button>
+                  <button type="button" disabled={editSaving} onClick={() => closeEditBooking()} className="min-h-10 shrink-0 rounded-lg border border-[var(--border)] px-3 text-xs font-bold text-[var(--muted)] transition hover:border-accent/40 hover:text-[var(--text)] disabled:opacity-50">Volver</button>
+                  <button type="button" disabled={editSaving || editLoading || !editTime} onClick={confirmEditBooking} className="min-h-10 flex-1 rounded-lg bg-gradient-to-b from-accent to-accent-strong px-3 text-xs font-extrabold text-[#1a1406] shadow-md shadow-accent/10 transition hover:brightness-105 disabled:opacity-60">{editSaving ? "Guardando…" : "Guardar cambio"}</button>
                 </div>
               </div>
             </section>
@@ -1016,8 +1025,63 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
                   Este día está lleno, todos los horarios están ocupados.
                 </p>
               )}
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(84px,1fr))] gap-2">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(78px,1fr))] gap-1.5 sm:gap-2">
                 {slots.map((slot) => {
+                  const reservedBookings = slot.bookings || [];
+                  if (reservedBookings.length > 0) {
+                    return (
+                      <div
+                        key={slot.time}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`${reservedBookings.length > 1 ? `Elegir uno de los ${reservedBookings.length} turnos` : "Editar turno"} a las ${slot.time}`}
+                        onClick={() => handleReservedSlotClick(reservedBookings)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            handleReservedSlotClick(reservedBookings);
+                          }
+                        }}
+                        className="col-span-1 min-w-0 cursor-pointer rounded-xl border border-accent/40 bg-accent/[0.08] p-1.5 transition hover:border-accent/75 hover:bg-accent/[0.14] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:p-2"
+                      >
+                        <div className="relative min-h-5">
+                          {reservedBookings.length > 1 && (
+                            <span
+                              className="absolute left-0 grid h-5 min-w-5 place-items-center rounded-full bg-accent/20 px-1 text-[9px] font-extrabold text-accent"
+                              aria-label={`${reservedBookings.length} turnos simultáneos`}
+                            >
+                              {reservedBookings.length}
+                            </span>
+                          )}
+                          <span className="absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-[13px] font-extrabold tabular-nums text-accent">
+                            <span className="line-through decoration-accent/75 decoration-[1px]">{slot.time}</span>
+                          </span>
+                          <span className="absolute right-0 top-1/2 flex -translate-y-1/2 items-center gap-1" aria-hidden="true">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent">
+                              <path d="m15.5 5.5 3 3M4 20l4.5-1 11-11a2.1 2.1 0 0 0-3-3l-11 11L4 20Z" />
+                            </svg>
+                            {slot.free && (
+                              <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-bold text-emerald-300">Libre</span>
+                            )}
+                          </span>
+                        </div>
+                        {slot.free && (
+                          <button
+                            type="button"
+                            className="mt-1 min-h-8 w-full rounded-lg border border-emerald-500/35 bg-emerald-500/10 px-1.5 text-[10px] font-bold text-emerald-300 transition hover:bg-emerald-500/20"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setSelectedSlot(slot.time);
+                              setStep(4);
+                              setError("");
+                            }}
+                          >
+                            + Reservar
+                          </button>
+                        )}
+                      </div>
+                    );
+                  }
                   const lleno = !slot.free;
                   const parcial = slot.free && slot.ocupadas > 0;
                   if (selectedSlot === slot.time && slot.free) {
@@ -1095,13 +1159,13 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
               </div>
               <div className="flex flex-wrap gap-3.5">
                 <span className="inline-flex items-center gap-1.5 text-[12.5px] text-[var(--muted)]">
-                  <i className="w-2.5 h-2.5 rounded-full bg-emerald-400" /> Libre
+                  <i className="w-2.5 h-2.5 rounded-full bg-emerald-400" /> Disponible
                 </span>
                 <span className="inline-flex items-center gap-1.5 text-[12.5px] text-[var(--muted)]">
-                  <i className="w-2.5 h-2.5 rounded-full bg-red-400" /> Ocupado
+                  <i className="w-2.5 h-2.5 rounded-full bg-accent" /> Reservado · editable
                 </span>
                 <span className="inline-flex items-center gap-1.5 text-[12.5px] text-[var(--muted)]">
-                  <i className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-red-400 to-emerald-400" /> Medio ocupado
+                  <i className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-red-400 to-emerald-400" /> Disponibilidad parcial
                 </span>
               </div>
             </>
@@ -1331,69 +1395,5 @@ function BookingLoadingState({ error }: { error?: string }) {
         )}
       </div>
     </main>
-  );
-}
-
-const MONTH_SHORT = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
-const DAY_SHORT = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
-
-function TurnoCard({
-  booking,
-  cancelling,
-  disabled,
-  onEdit,
-  onCancel,
-}: {
-  booking: BookingConfirmation;
-  cancelling: boolean;
-  disabled: boolean;
-  onEdit: () => void;
-  onCancel: () => void;
-}) {
-  const d = new Date(`${booking.date}T00:00:00`);
-  const month = MONTH_SHORT[d.getMonth()];
-  const day = d.getDate();
-  const dayShort = DAY_SHORT[d.getDay()];
-  return (
-    <li className="rounded-xl border border-[var(--border)] bg-[var(--card-2)] p-2.5 sm:p-3.5 flex flex-row items-center gap-2.5 sm:gap-4">
-      <div className="shrink-0 flex items-center">
-        <span className="w-11 sm:w-[58px] rounded-lg border border-[var(--border)] bg-[var(--card)] overflow-hidden text-center">
-          <span className="block text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wide text-accent bg-accent/10 py-0.5">
-            {month}
-          </span>
-          <span className="block py-0.5 sm:py-1 text-base sm:text-xl font-bold leading-none">{day}</span>
-        </span>
-      </div>
-      <div className="min-w-0 flex-1 flex flex-col gap-0.5">
-        <strong className="truncate text-[13.5px] sm:text-base">{booking.service}</strong>
-        <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[12.5px] sm:text-sm text-[var(--muted)]">
-          <span className="truncate">
-            {dayShort} · {booking.time} h
-          </span>
-          <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] sm:text-xs font-bold text-emerald-400">
-            <i className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-400" /> Confirmado
-          </span>
-        </span>
-      </div>
-      <div className="flex shrink-0 flex-col gap-1.5">
-        <button
-          type="button"
-          onClick={onEdit}
-          disabled={disabled || cancelling}
-          className="min-h-10 whitespace-nowrap rounded-xl border border-accent/35 px-2.5 py-2 text-[12px] font-bold text-accent hover:bg-accent/10 disabled:opacity-60 sm:px-3"
-        >
-          Cambiar
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={disabled || cancelling}
-          aria-label={`Cancelar turno de ${booking.service} del ${dayShort} a las ${booking.time}`}
-          className="min-h-10 whitespace-nowrap rounded-xl border border-red-500/30 px-2.5 py-2 text-[12px] font-bold text-red-300 hover:bg-red-500/10 disabled:opacity-60 sm:px-3"
-        >
-          {cancelling ? "Cancelando…" : "Cancelar"}
-        </button>
-      </div>
-    </li>
   );
 }

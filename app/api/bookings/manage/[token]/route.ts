@@ -46,7 +46,7 @@ function canManageBooking(
   if (!booking.managePasswordHash) return validToken(identifier);
   if (!password || !verifyBookingPassword(password, booking.managePasswordHash)) return false;
   if (validToken(identifier)) return true;
-  return Boolean(phone && normalizeWhatsapp(phone) === booking.phone);
+  return !phone || normalizeWhatsapp(phone) === booking.phone;
 }
 
 function publicBooking(booking: { toObject: () => Record<string, unknown> }) {

@@ -13,7 +13,23 @@ export type Service = {
   img: string;
 };
 
-export type Slot = { time: string; free: boolean; ocupadas: number; sillas: number };
+export type AvailabilityBooking = {
+  id: string;
+  name: string;
+  service: string;
+  duration: number;
+  price: number;
+  date: string;
+  time: string;
+};
+
+export type Slot = {
+  time: string;
+  free: boolean;
+  ocupadas: number;
+  sillas: number;
+  bookings?: AvailabilityBooking[];
+};
 
 export type AvailabilityData = {
   barberName: string;
@@ -188,17 +204,6 @@ export function updateBookingSchedule(
   return request(`/bookings/manage/${encodeURIComponent(identifier)}`, {
     method: "PATCH",
     body: JSON.stringify(payload),
-  });
-}
-
-export function findManagedBookings(
-  password: string,
-  tenantSlug?: string
-): Promise<BookingConfirmation[]> {
-  const query = tenantSlug ? `?tenant=${encodeURIComponent(tenantSlug)}` : "";
-  return request(`/bookings/manage${query}`, {
-    method: "POST",
-    body: JSON.stringify({ password }),
   });
 }
 
