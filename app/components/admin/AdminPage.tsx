@@ -84,6 +84,20 @@ function whatsappReminderHref(booking: AdminBooking, businessName?: string | nul
   return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
 }
 
+function whatsappCancelledHref(booking: AdminBooking, businessName?: string | null) {
+  const phone = booking.phone?.replace(/\D/g, "");
+  if (!phone) return undefined;
+
+  const sender = businessName ? ` desde ${businessName}` : "";
+  const message = [
+    `Hola ${booking.name}, vimos que cancelaste tu turno de ${booking.service}${sender}.`,
+    "Si querés, podemos ayudarte a elegir un nuevo día y horario.",
+    "¡Gracias por avisarnos!",
+  ].join(" ");
+
+  return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+}
+
 const moneyFormatter = new Intl.NumberFormat("es-AR", {
   style: "currency",
   currency: "ARS",
@@ -1505,6 +1519,7 @@ export default function AdminPage({
                     const expanded = expandedBookingId === b._id;
                     const phoneHref = b.phone ? `tel:${b.phone.replace(/[^\d+]/g, "")}` : undefined;
                     const reminderHref = b.status !== "cancelled" && b.status !== "done" ? whatsappReminderHref(b, activeTenantName) : undefined;
+                    const cancelledContactHref = b.status === "cancelled" ? whatsappCancelledHref(b, activeTenantName) : undefined;
                     return (
                       <li
                         key={b._id}
@@ -1601,6 +1616,21 @@ export default function AdminPage({
                                     <path d="M20.5 3.5A11.8 11.8 0 0 0 12.1 0C5.6 0 .3 5.3.3 11.8c0 2.1.6 4.1 1.6 5.8L.2 24l6.6-1.7a11.8 11.8 0 0 0 5.3 1.3h.1c6.5 0 11.8-5.3 11.8-11.8 0-3.2-1.3-6.1-3.5-8.3Zm-8.4 18.1h-.1c-1.7 0-3.4-.5-4.8-1.3l-.3-.2-3.9 1 1-3.8-.2-.3a9.8 9.8 0 1 1 8.3 4.6Zm5.4-7.3c-.3-.2-1.7-.8-2-.9-.3-.1-.5-.2-.7.2-.2.3-.7.9-.8 1.1-.2.2-.3.2-.6.1-1.6-.8-2.7-1.4-3.8-3.2-.3-.5.3-.5.8-1.6.1-.2.1-.4 0-.6s-.7-1.6-1-2.2c-.3-.6-.5-.5-.7-.5h-.6c-.2 0-.6.1-.9.4-.3.3-1.2 1.2-1.2 2.9s1.2 3.4 1.4 3.6c.2.2 2.4 3.7 5.8 5.1.8.4 1.5.6 2 .8.8.3 1.6.2 2.2.1.7-.1 1.7-.7 1.9-1.3.2-.6.2-1.2.1-1.3-.2-.2-.4-.3-.7-.5Z" />
                                   </svg>
                                   Recordatorio por WhatsApp
+                                </a>
+                              )}
+                              {cancelledContactHref && (
+                                <a
+                                  href={cancelledContactHref}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  aria-label={`Contactar por WhatsApp a ${b.name} por su turno cancelado`}
+                                  className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border border-amber-300/35 bg-amber-400/12 px-3 py-2 text-[12.5px] font-bold text-amber-200 transition hover:bg-amber-400/20 sm:flex-none"
+                                >
+                                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                                    <path d="M21 11.5a8.5 8.5 0 0 1-9 8.5 8.8 8.8 0 0 1-4.1-1l-4.4 1 1.1-4.1A8.4 8.4 0 0 1 3.5 11a8.5 8.5 0 1 1 17.5.5Z" />
+                                    <path d="M8.5 9.5c.2 2.2 2 4 4.2 4.2l1.2-1.2 1.6.7c.3.1.4.4.3.7l-.4 1.1c-.1.3-.4.5-.7.5a7.5 7.5 0 0 1-6.1-6.1c0-.3.2-.6.5-.7l1.1-.4c.3-.1.6 0 .7.3l.7 1.6-1.2 1.2Z" />
+                                  </svg>
+                                  Contactar por WhatsApp
                                 </a>
                               )}
                               {b.status !== "cancelled" && b.status !== "done" && (
@@ -2373,13 +2403,16 @@ export default function AdminPage({
                 onClear={() => setDraft({ ...draft, imgAbout: "" })}
               />
               <ImageField
-                label="Sección Reservar"
+                label="Fondo de reservas"
                 value={draft.imgReservar}
                 uploading={uploading}
                 onChange={(file) => handleUploadImage(file, "imgReservar", "reservar")}
                 onClear={() => setDraft({ ...draft, imgReservar: "" })}
               />
             </div>
+            <p className="-mt-2 text-[var(--muted)] text-[13px]">
+              Esta imagen se muestra en la sección «Reservar» de la web y como fondo del encabezado de la pantalla de reservas.
+            </p>
 
             <h3 className="text-[15px] font-extrabold text-accent mt-1">Fotos de servicios</h3>
             <p className="text-[var(--muted)] text-[13px]">

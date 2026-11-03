@@ -5,8 +5,10 @@ import Image from "next/image";
 import {
   createBooking,
   cancelBooking,
+  findManagedBookings,
   getManagedBooking,
   getAvailability,
+  updateBookingSchedule,
   BookingConfirmation,
   Service,
   Slot,
@@ -98,7 +100,7 @@ function isBookingFinished(booking: { date?: string; time?: string; duration?: n
 
 function isBookingActive(booking: BookingConfirmation) {
   if (booking.status === "cancelled" || booking.status === "done") return false;
-  if (!booking.manageToken || !booking.date || !booking.time) return false;
+  if ((!booking.manageToken && !booking.manageId) || !booking.date || !booking.time) return false;
   return !isBookingFinished(booking);
 }
 
@@ -233,6 +235,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
 
   const [barberName, setBarberName] = useState("Barbería");
   const [logo, setLogo] = useState("");
+  const [bookingHeroImage, setBookingHeroImage] = useState("");
   const [message, setMessage] = useState("");
   const [services, setServices] = useState<Service[]>([]);
   const [slots, setSlots] = useState<Slot[]>([]);
@@ -245,15 +248,30 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [bookingPassword, setBookingPassword] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [bookings, setBookings] = useState<BookingConfirmation[]>([]);
   const [cancellingToken, setCancellingToken] = useState<string | null>(null);
   const [bookingToCancel, setBookingToCancel] = useState<BookingConfirmation | null>(null);
+  const [bookingToEdit, setBookingToEdit] = useState<BookingConfirmation | null>(null);
+  const [editService, setEditService] = useState("");
+  const [editDate, setEditDate] = useState("");
+  const [editTime, setEditTime] = useState("");
+  const [editSlots, setEditSlots] = useState<Slot[]>([]);
+  const [editPassword, setEditPassword] = useState("");
+  const [editLoading, setEditLoading] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
   const [hydrated, setHydrated] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [bookingNotice, setBookingNotice] = useState("");
   const [cancelError, setCancelError] = useState("");
+  const [cancelPassword, setCancelPassword] = useState("");
+  const [manageFormOpen, setManageFormOpen] = useState(false);
+  const [managePassword, setManagePassword] = useState("");
+  const [manageLoading, setManageLoading] = useState(false);
+  const [manageError, setManageError] = useState("");
   const didHydrate = useRef(false);
 
   const freeCount = slots.filter((s) => s.free).length;
@@ -326,6 +344,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
         if (cancelled) return;
         setBarberName(data.barberName);
         setLogo(data.imgLogo || "");
+        setBookingHeroImage(data.imgReservar || "");
         setMessage(data.message || "");
         setServices(data.services || []);
         setSlots(data.slots || []);
@@ -342,11 +361,41 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
     };
   }, [date, selectedService, tenantSlug]);
 
+  useEffect(() => {
+    if (!bookingToEdit || !editDate || !editService) {
+      return;
+    }
+    let cancelled = false;
+    getAvailability(editDate, editService, tenantSlug)
+      .then((data) => {
+        if (cancelled) return;
+        setEditSlots(data.slots || []);
+        setEditTime((current) =>
+          data.slots.some((slot) => slot.time === current && (slot.free || slot.time === bookingToEdit.time))
+            ? current
+            : ""
+        );
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setEditSlots([]);
+          setEditError(err instanceof Error ? err.message : "No pudimos cargar los horarios");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setEditLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [bookingToEdit, editDate, editService, tenantSlug]);
+
   async function refreshSlots() {
     try {
       const data = await getAvailability(date || today, selectedService, tenantSlug);
       setBarberName(data.barberName);
       setLogo(data.imgLogo || "");
+      setBookingHeroImage(data.imgReservar || "");
       setMessage(data.message || "");
       setServices(data.services || []);
       setSlots(data.slots || []);
@@ -372,6 +421,10 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
       setError("Ingresá tu nombre y un teléfono válido");
       return;
     }
+    if (bookingPassword.length < 6 || bookingPassword.length > 72) {
+      setError("La contraseña del turno debe tener entre 6 y 72 caracteres");
+      return;
+    }
     setSubmitting(true);
     setError("");
     persistTermsAccepted();
@@ -382,6 +435,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
         service: selectedService,
         date,
         time: selectedSlot,
+        managePassword: bookingPassword,
       }, tenantSlug);
       setBookings((prev) =>
         booking.manageToken
@@ -392,6 +446,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
         `Turno reservado: ${booking.service} · ${formatDate(booking.date)} · ${booking.time} h. Queda guardado en este dispositivo.`
       );
       setCancelError("");
+      setBookingPassword("");
       setStep(1);
       setDate("");
       setSelectedSlot("");
@@ -417,26 +472,126 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
     setTermsAccepted(true);
   }
 
-  async function handleCancelBooking(token: string) {
+  function handleCancelBooking(booking: BookingConfirmation) {
     if (cancellingToken) return;
-    const booking = bookings.find((entry) => entry.manageToken === token);
-    if (booking) setBookingToCancel(booking);
+    setCancelError("");
+    setCancelPassword("");
+    setBookingToCancel(booking);
+  }
+
+  function handleEditBooking(booking: BookingConfirmation) {
+    setEditError("");
+    setEditPassword("");
+    setEditService(booking.service);
+    setEditDate(booking.date);
+    setEditTime(booking.time);
+    setEditLoading(true);
+    setBookingToEdit(booking);
+  }
+
+  function closeEditBooking(force = false) {
+    if (editSaving && !force) return;
+    setBookingToEdit(null);
+    setEditError("");
+    setEditPassword("");
+    setEditSlots([]);
+  }
+
+  async function confirmEditBooking() {
+    if (!bookingToEdit || editSaving) return;
+    const identifier = bookingToEdit.manageToken || bookingToEdit.manageId || bookingToEdit._id;
+    const requiresPassword = Boolean(bookingToEdit.managePasswordRequired || bookingToEdit.manageId);
+    if (!editDate || !editTime || !editService) {
+      setEditError("Elegí el servicio, la fecha y el horario");
+      return;
+    }
+    if (requiresPassword && editPassword.length < 6) {
+      setEditError("Ingresá la contraseña que creaste al reservar");
+      return;
+    }
+    setEditSaving(true);
+    setEditError("");
+    try {
+      const updated = await updateBookingSchedule(identifier, {
+        service: editService,
+        date: editDate,
+        time: editTime,
+        password: requiresPassword ? editPassword : undefined,
+        phone: bookingToEdit.phone,
+      });
+      const merged = {
+        ...updated,
+        manageToken: bookingToEdit.manageToken,
+        manageId: bookingToEdit.manageId,
+        managePasswordRequired: bookingToEdit.managePasswordRequired,
+      };
+      setBookings((prev) => prev.map((entry) => entry._id === bookingToEdit._id ? merged : entry));
+      setBookingNotice(`Turno actualizado: ${merged.service} · ${formatDate(merged.date)} · ${merged.time} h.`);
+      closeEditBooking(true);
+      await refreshSlots();
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "No pudimos actualizar el turno");
+    } finally {
+      setEditSaving(false);
+    }
   }
 
   async function confirmCancelBooking() {
-    if (!bookingToCancel?.manageToken || cancellingToken) return;
-    const token = bookingToCancel.manageToken;
-    setCancellingToken(token);
+    if (!bookingToCancel || cancellingToken) return;
+    const identifier = bookingToCancel.manageToken || bookingToCancel.manageId || bookingToCancel._id;
+    const requiresPassword = Boolean(bookingToCancel.managePasswordRequired || bookingToCancel.manageId);
+    if (requiresPassword && cancelPassword.length < 6) {
+      setCancelError("Ingresá la contraseña que creaste al reservar");
+      return;
+    }
+    setCancellingToken(identifier);
     setCancelError("");
     try {
-      await cancelBooking(token);
-      setBookings((prev) => prev.filter((entry) => entry.manageToken !== token));
+      await cancelBooking(
+        identifier,
+        requiresPassword ? cancelPassword : undefined,
+        bookingToCancel.phone
+      );
+      setBookings((prev) => prev.filter((entry) => entry._id !== bookingToCancel._id));
       setBookingNotice("El turno fue cancelado y el horario ya quedó liberado.");
       setBookingToCancel(null);
+      setCancelPassword("");
     } catch (err) {
       setCancelError(err instanceof Error ? err.message : "No pudimos cancelar el turno");
     } finally {
       setCancellingToken(null);
+    }
+  }
+
+  async function handleFindManagedBookings(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setManageError("");
+    if (managePassword.length < 6) {
+      setManageError("Ingresá la contraseña que usaste al reservar");
+      return;
+    }
+    setManageLoading(true);
+    try {
+      const found = await findManagedBookings(managePassword, tenantSlug);
+      const next = [
+        ...found,
+        ...bookings.filter((current) => !found.some((item) => item._id === current._id)),
+      ];
+      setBookings(next);
+      setManageFormOpen(false);
+      setManagePassword("");
+      setBookingNotice(
+        found.length === 1
+          ? "Encontramos tu turno. Desde acá podés cancelarlo si lo necesitás."
+          : `Encontramos ${found.length} turnos activos. Desde acá podés gestionarlos.`
+      );
+      window.requestAnimationFrame(() =>
+        document.getElementById("mis-turnos")?.scrollIntoView({ behavior: "smooth", block: "start" })
+      );
+    } catch (err) {
+      setManageError(err instanceof Error ? err.message : "No pudimos buscar tus turnos");
+    } finally {
+      setManageLoading(false);
     }
   }
 
@@ -464,7 +619,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
         {/* Hero */}
         <section className="relative h-[215px] sm:h-[270px] rounded-[18px] sm:rounded-[20px] overflow-hidden border border-[var(--border)]">
           <Image
-            src={HERO_IMG}
+            src={bookingHeroImage || HERO_IMG}
             alt=""
             fill
             sizes="(max-width: 720px) 100vw, 720px"
@@ -490,6 +645,16 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
                 Ver mis turnos ({bookings.length})
               </a>
             )}
+            <button
+              type="button"
+              onClick={() => {
+                setManageFormOpen(true);
+                setManageError("");
+              }}
+              className="mt-1 inline-flex min-h-10 items-center justify-center rounded-full border border-accent/45 bg-accent/15 px-4 text-xs font-extrabold text-accent backdrop-blur-sm transition hover:bg-accent/25"
+            >
+              Gestionar un turno
+            </button>
           </div>
         </section>
 
@@ -503,6 +668,52 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
             )
           )}
         </div>
+
+        {manageFormOpen && (
+          <section className="rounded-[22px] border border-[var(--accent)] bg-[var(--card)] p-4 shadow-[0_18px_60px_rgba(0,0,0,0.18)] sm:p-[22px]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-extrabold uppercase tracking-[2px] text-accent">Acceso seguro</p>
+                <h2 className="mt-1 text-[21px] font-bold">Gestioná tu turno</h2>
+                <p className="mt-1 text-sm text-[var(--muted)]">
+                  Usá la contraseña que elegiste al reservar, incluso desde otro dispositivo.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setManageFormOpen(false);
+                  setManageError("");
+                }}
+                className="min-h-10 shrink-0 rounded-xl border border-[var(--border)] px-3 text-sm font-bold text-[var(--muted)] hover:text-[var(--text)]"
+              >
+                Cerrar
+              </button>
+            </div>
+            <form className="mt-4 flex flex-col gap-3" onSubmit={handleFindManagedBookings}>
+              <Field label="Contraseña del turno">
+                <input
+                  className="w-full rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] px-3.5 py-3 text-[var(--text)]"
+                  type="password"
+                  value={managePassword}
+                  onChange={(event) => setManagePassword(event.target.value)}
+                  placeholder="Mínimo 6 caracteres"
+                  minLength={6}
+                  maxLength={72}
+                  autoComplete="current-password"
+                />
+              </Field>
+              {manageError && <p role="alert" className="text-sm font-semibold text-[var(--red)]">{manageError}</p>}
+              <button
+                type="submit"
+                disabled={manageLoading}
+                className="min-h-11 rounded-xl bg-gradient-to-b from-[var(--accent)] to-[var(--accent-strong)] px-4 py-3 font-extrabold text-[#1a1406] disabled:opacity-60"
+              >
+                {manageLoading ? "Buscando…" : "Buscar mis turnos"}
+              </button>
+            </form>
+          </section>
+        )}
 
         {/* Mis turnos */}
         {bookings.length > 0 && (
@@ -526,7 +737,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
               )}
             </div>
             <p className="text-[var(--muted)] text-[13px] sm:text-sm -mt-1">
-              Se guardan en este dispositivo. Volvé cuando quieras para cancelarlos.
+              También podés recuperarlos desde otro dispositivo con tu teléfono y la contraseña del turno.
             </p>
             {cancelError && (
               <p role="alert" className="text-sm font-semibold text-[var(--red)]">{cancelError}</p>
@@ -538,8 +749,9 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
                   booking={booking}
                   cancelling={cancellingToken === booking.manageToken}
                   disabled={Boolean(cancellingToken)}
+                  onEdit={() => handleEditBooking(booking)}
                   onCancel={() => {
-                    if (booking.manageToken) handleCancelBooking(booking.manageToken);
+                    handleCancelBooking(booking);
                   }}
                 />
               ))}
@@ -555,8 +767,121 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
           confirmLabel="Cancelar turno"
           loading={Boolean(cancellingToken)}
           onConfirm={confirmCancelBooking}
-          onCancel={() => setBookingToCancel(null)}
-        />
+          onCancel={() => {
+            if (cancellingToken) return;
+            setBookingToCancel(null);
+            setCancelPassword("");
+            setCancelError("");
+          }}
+        >
+          {(bookingToCancel?.managePasswordRequired || bookingToCancel?.manageId) && (
+            <div className="mt-4">
+              <label className="flex flex-col gap-1.5 text-sm font-bold text-[var(--text)]">
+                Contraseña del turno
+                <input
+                  type="password"
+                  value={cancelPassword}
+                  onChange={(event) => setCancelPassword(event.target.value)}
+                  placeholder="La que elegiste al reservar"
+                  minLength={6}
+                  maxLength={72}
+                  autoComplete="current-password"
+                  className="w-full rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] px-3.5 py-3 font-normal text-[var(--text)]"
+                />
+              </label>
+              {cancelError && <p role="alert" className="mt-2 text-sm font-semibold text-[var(--red)]">{cancelError}</p>}
+            </div>
+          )}
+        </ConfirmDialog>
+
+        {bookingToEdit && (
+          <div
+            className="fixed inset-0 z-[100] flex items-end justify-center bg-black/70 p-3 backdrop-blur-[2px] sm:items-center sm:p-6"
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) closeEditBooking();
+            }}
+          >
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="edit-booking-title"
+              className="max-h-[90svh] w-full max-w-md overflow-y-auto rounded-[24px] border border-accent/35 bg-[var(--card)] shadow-2xl shadow-black/40"
+            >
+              <div className="h-1 bg-gradient-to-r from-accent via-amber-300 to-transparent" aria-hidden="true" />
+              <div className="p-5 sm:p-6">
+                <p className="text-[10px] font-extrabold uppercase tracking-[2px] text-accent">Gestionar turno</p>
+                <h2 id="edit-booking-title" className="mt-1 text-xl font-extrabold">Cambiar servicio u horario</h2>
+                <p className="mt-1.5 text-sm leading-5 text-[var(--muted)]">
+                  Elegí una nueva opción. El cambio se confirma solo si el horario sigue disponible.
+                </p>
+                <div className="mt-4 flex flex-col gap-3">
+                  <Field label="Servicio">
+                    <select
+                      value={editService}
+                      onChange={(event) => {
+                        setEditService(event.target.value);
+                        setEditTime("");
+                        setEditLoading(true);
+                        setEditError("");
+                      }}
+                      className="w-full rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] px-3.5 py-3 text-[var(--text)]"
+                    >
+                      {services.map((service) => <option key={service.name} value={service.name}>{service.name}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Fecha">
+                    <input
+                      type="date"
+                      value={editDate}
+                      min={today}
+                      max={maxDate}
+                      onChange={(event) => {
+                        setEditDate(event.target.value);
+                        setEditTime("");
+                        setEditLoading(true);
+                        setEditError("");
+                      }}
+                      className="w-full rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] px-3.5 py-3 text-[var(--text)]"
+                    />
+                  </Field>
+                  <Field label="Horario">
+                    <select
+                      value={editTime}
+                      onChange={(event) => setEditTime(event.target.value)}
+                      disabled={editLoading || editSlots.length === 0}
+                      className="w-full rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] px-3.5 py-3 text-[var(--text)] disabled:opacity-60"
+                    >
+                      <option value="">{editLoading ? "Cargando horarios…" : "Elegí un horario"}</option>
+                      {editSlots.filter((slot) => slot.free || slot.time === bookingToEdit.time).map((slot) => (
+                        <option key={slot.time} value={slot.time}>{slot.time} h</option>
+                      ))}
+                    </select>
+                  </Field>
+                  {(bookingToEdit.managePasswordRequired || bookingToEdit.manageId) && (
+                    <Field label="Contraseña del turno">
+                      <input
+                        type="password"
+                        value={editPassword}
+                        onChange={(event) => setEditPassword(event.target.value)}
+                        placeholder="La que elegiste al reservar"
+                        minLength={6}
+                        maxLength={72}
+                        autoComplete="current-password"
+                        className="w-full rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] px-3.5 py-3 text-[var(--text)]"
+                      />
+                    </Field>
+                  )}
+                  {editError && <p role="alert" className="text-sm font-semibold text-[var(--red)]">{editError}</p>}
+                </div>
+                <div className="mt-5 flex flex-col-reverse gap-2.5 sm:flex-row sm:justify-end">
+                  <button type="button" disabled={editSaving} onClick={() => closeEditBooking()} className="min-h-11 rounded-xl border border-[var(--border)] px-4 py-2.5 text-sm font-bold text-[var(--muted)] disabled:opacity-50 sm:min-w-28">Volver</button>
+                  <button type="button" disabled={editSaving || editLoading || !editTime} onClick={confirmEditBooking} className="min-h-11 rounded-xl bg-gradient-to-b from-accent to-accent-strong px-4 py-2.5 text-sm font-extrabold text-[#1a1406] disabled:opacity-60 sm:min-w-36">{editSaving ? "Guardando…" : "Guardar cambio"}</button>
+                </div>
+              </div>
+            </section>
+          </div>
+        )}
 
         <BookingProgress step={step} />
 
@@ -819,6 +1144,22 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
                   autoComplete="tel"
                 />
               </Field>
+              <Field label="Contraseña para gestionar el turno">
+                <input
+                  className="w-full px-3.5 py-3 rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] text-[var(--text)]"
+                  type="password"
+                  value={bookingPassword}
+                  onChange={(e) => setBookingPassword(e.target.value)}
+                  placeholder="Mínimo 6 caracteres"
+                  minLength={6}
+                  maxLength={72}
+                  autoComplete="new-password"
+                  required
+                />
+                <span className="text-xs font-normal leading-5 text-[var(--muted)]">
+                  Solo se usa para verificar ediciones o cancelaciones. Guardala para gestionar tu turno desde cualquier dispositivo.
+                </span>
+              </Field>
               <label className="flex items-start gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] p-3 text-sm text-[var(--muted)]">
                 <input
                   type="checkbox"
@@ -964,11 +1305,13 @@ function TurnoCard({
   booking,
   cancelling,
   disabled,
+  onEdit,
   onCancel,
 }: {
   booking: BookingConfirmation;
   cancelling: boolean;
   disabled: boolean;
+  onEdit: () => void;
   onCancel: () => void;
 }) {
   const d = new Date(`${booking.date}T00:00:00`);
@@ -996,15 +1339,25 @@ function TurnoCard({
           </span>
         </span>
       </div>
-      <button
-        type="button"
-        onClick={onCancel}
-        disabled={disabled || cancelling}
-        aria-label={`Cancelar turno de ${booking.service} del ${dayShort} a las ${booking.time}`}
-        className="min-h-11 w-auto shrink-0 whitespace-nowrap px-3 sm:px-4 py-2 rounded-xl font-bold text-[12.5px] sm:text-sm text-red-300 border border-red-500/30 hover:bg-red-500/10 disabled:opacity-60"
-      >
-        {cancelling ? "Cancelando…" : "Cancelar turno"}
-      </button>
+      <div className="flex shrink-0 flex-col gap-1.5">
+        <button
+          type="button"
+          onClick={onEdit}
+          disabled={disabled || cancelling}
+          className="min-h-10 whitespace-nowrap rounded-xl border border-accent/35 px-2.5 py-2 text-[12px] font-bold text-accent hover:bg-accent/10 disabled:opacity-60 sm:px-3"
+        >
+          Cambiar
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={disabled || cancelling}
+          aria-label={`Cancelar turno de ${booking.service} del ${dayShort} a las ${booking.time}`}
+          className="min-h-10 whitespace-nowrap rounded-xl border border-red-500/30 px-2.5 py-2 text-[12px] font-bold text-red-300 hover:bg-red-500/10 disabled:opacity-60 sm:px-3"
+        >
+          {cancelling ? "Cancelando…" : "Cancelar"}
+        </button>
+      </div>
     </li>
   );
 }

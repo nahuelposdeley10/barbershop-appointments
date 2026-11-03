@@ -75,6 +75,7 @@ export async function GET(req: NextRequest) {
       barberName: settings.barberName,
       message: settings.message,
       imgLogo: settings.imgLogo || "",
+      imgReservar: settings.imgReservar || "",
       services: settings.services,
       date,
       slots,

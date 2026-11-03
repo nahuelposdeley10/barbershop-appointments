@@ -16,7 +16,7 @@ import {
 import { Booking } from "@/lib/models/Booking";
 import { BookingLock } from "@/lib/models/BookingLock";
 import { rateLimited } from "@/lib/rate-limit";
-import { createBookingManageToken } from "@/lib/booking-access";
+import { createBookingManageToken, hashBookingPassword } from "@/lib/booking-access";
 import { logRequestError, requestId, withRequestId } from "@/lib/request-id";
 import { resolveTenantForRequest, tenantFilter } from "@/lib/tenancy";
 
@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
       service?: string;
       date?: string;
       time?: string;
+      managePassword?: string;
       website?: string;
     } = {};
     try {
@@ -48,11 +49,12 @@ export async function POST(req: NextRequest) {
     if (body.website) {
       return Response.json({ error: "Solicitud inválida" }, { status: 400 });
     }
-    const { name, phone, service, date, time } = body || {};
+    const { name, phone, service, date, time, managePassword } = body || {};
     const cleanName = typeof name === "string" ? name.trim() : "";
     const cleanPhone = typeof phone === "string" ? normalizeWhatsapp(phone) : "";
     const cleanService = typeof service === "string" ? service.trim() : "";
     const cleanTime = typeof time === "string" ? time.trim() : "";
+    const cleanManagePassword = typeof managePassword === "string" ? managePassword : "";
     if (!cleanName || !cleanPhone || !cleanService || !date || !cleanTime) {
       return Response.json({ error: "Completá todos los datos" }, { status: 400 });
     }
@@ -61,6 +63,12 @@ export async function POST(req: NextRequest) {
     }
     if (cleanPhone.length < 8 || cleanPhone.length > 15) {
       return Response.json({ error: "Ingresá un teléfono válido" }, { status: 400 });
+    }
+    if (cleanManagePassword.length < 6 || cleanManagePassword.length > 72) {
+      return Response.json(
+        { error: "La contraseña del turno debe tener entre 6 y 72 caracteres" },
+        { status: 400 }
+      );
     }
     const d = normalizeDate(date);
     if (!d) {
@@ -160,6 +168,7 @@ export async function POST(req: NextRequest) {
             paymentStatus: "pending",
             ...(tenantId ? { tenantId } : {}),
             manageTokenHash: manageToken.hash,
+            managePasswordHash: hashBookingPassword(cleanManagePassword),
           }],
           { session }
         );
@@ -178,10 +187,12 @@ export async function POST(req: NextRequest) {
     }
     const publicBooking = { ...(booking as Record<string, unknown>) };
     delete publicBooking.manageTokenHash;
+    delete publicBooking.managePasswordHash;
     return Response.json(
       {
         ...publicBooking,
         manageToken: manageToken.token,
+        managePasswordRequired: true,
         address: settings.direccion,
       },
       { status: 201 }

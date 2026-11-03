@@ -22,6 +22,7 @@ const bookingSchema = new mongoose.Schema(
       index: true,
     },
     manageTokenHash: { type: String, select: false, index: true },
+    managePasswordHash: { type: String, select: false },
     cancelledAt: { type: Date },
     cancelledBy: { type: String, default: "" },
     cancelReason: { type: String, default: "", maxlength: 300 },
@@ -47,6 +48,7 @@ export type BookingDoc = {
   status: BookingStatus;
   paymentStatus: PaymentStatus;
   manageTokenHash?: string;
+  managePasswordHash?: string;
   cancelledAt?: Date;
   cancelledBy?: string;
   cancelReason?: string;

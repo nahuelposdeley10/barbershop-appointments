@@ -19,6 +19,7 @@ export type AvailabilityData = {
   barberName: string;
   message: string;
   imgLogo?: string;
+  imgReservar?: string;
   services: Service[];
   date: string;
   slots: Slot[];
@@ -36,6 +37,8 @@ export type BookingConfirmation = {
   status: string;
   paymentStatus?: "pending" | "paid" | "refunded";
   manageToken?: string;
+  manageId?: string;
+  managePasswordRequired?: boolean;
   address?: string;
 };
 
@@ -155,6 +158,7 @@ export function createBooking(payload: {
   service: string;
   date: string;
   time: string;
+  managePassword: string;
 }, tenantSlug?: string): Promise<BookingConfirmation> {
   return request(`/bookings${tenantSlug ? `?tenant=${encodeURIComponent(tenantSlug)}` : ""}`, {
     method: "POST",
@@ -162,8 +166,15 @@ export function createBooking(payload: {
   });
 }
 
-export function cancelBooking(token: string): Promise<BookingConfirmation> {
-  return request(`/bookings/manage/${encodeURIComponent(token)}`, { method: "DELETE" });
+export function cancelBooking(
+  identifier: string,
+  password?: string,
+  phone?: string
+): Promise<BookingConfirmation> {
+  return request(`/bookings/manage/${encodeURIComponent(identifier)}`, {
+    method: "DELETE",
+    body: JSON.stringify({ password, phone }),
+  });
 }
 
 export function getManagedBooking(token: string): Promise<BookingConfirmation> {
@@ -171,12 +182,23 @@ export function getManagedBooking(token: string): Promise<BookingConfirmation> {
 }
 
 export function updateBookingSchedule(
-  token: string,
-  payload: { service: string; date: string; time: string }
+  identifier: string,
+  payload: { service: string; date: string; time: string; password?: string; phone?: string }
 ): Promise<BookingConfirmation> {
-  return request(`/bookings/manage/${encodeURIComponent(token)}`, {
+  return request(`/bookings/manage/${encodeURIComponent(identifier)}`, {
     method: "PATCH",
     body: JSON.stringify(payload),
+  });
+}
+
+export function findManagedBookings(
+  password: string,
+  tenantSlug?: string
+): Promise<BookingConfirmation[]> {
+  const query = tenantSlug ? `?tenant=${encodeURIComponent(tenantSlug)}` : "";
+  return request(`/bookings/manage${query}`, {
+    method: "POST",
+    body: JSON.stringify({ password }),
   });
 }
 

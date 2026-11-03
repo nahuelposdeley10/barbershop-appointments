@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 export default function ConfirmDialog({
   open,
   title,
   description,
   detail,
+  children,
   confirmLabel,
   cancelLabel = "Volver",
   loading = false,
@@ -17,6 +18,7 @@ export default function ConfirmDialog({
   title: string;
   description: string;
   detail?: string;
+  children?: ReactNode;
   confirmLabel: string;
   cancelLabel?: string;
   loading?: boolean;
@@ -76,6 +78,7 @@ export default function ConfirmDialog({
               {detail}
             </div>
           )}
+          {children}
           <div className="mt-5 flex flex-col-reverse gap-2.5 sm:flex-row sm:justify-end">
             <button
               ref={cancelRef}
