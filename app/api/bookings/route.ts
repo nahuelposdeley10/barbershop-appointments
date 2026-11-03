@@ -21,6 +21,7 @@ import { createBookingManageToken, hashBookingPassword } from "@/lib/booking-acc
 import { logRequestError, requestId, withRequestId } from "@/lib/request-id";
 import { resolveTenantForRequest, tenantFilter } from "@/lib/tenancy";
 import { sendBookingCreatedEmail } from "@/lib/booking-email";
+import { sendBookingCreatedPush } from "@/lib/booking-push";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -246,22 +247,35 @@ export async function POST(req: NextRequest) {
     const publicBooking = { ...(booking as Record<string, unknown>) };
     delete publicBooking.manageTokenHash;
     delete publicBooking.managePasswordHash;
-    if (settings.bookingEmailNotificationsEnabled && settings.bookingNotificationEmail) {
-      after(async () => {
-        await sendBookingCreatedEmail({
-          bookingId: String(publicBooking._id || ""),
-          recipient: settings.bookingNotificationEmail,
-          barberName: settings.barberName,
-          customerName: cleanName,
-          customerPhone: cleanPhone,
+    const bookingId = String(publicBooking._id || "");
+    after(async () => {
+      const deliveries: Promise<unknown>[] = [
+        sendBookingCreatedPush({
+          tenantId,
+          bookingId,
           service: serviceCfg.name,
           date: d,
           time: cleanTime,
-          duration: serviceCfg.duration,
-          price: serviceCfg.price,
-        });
-      });
-    }
+        }),
+      ];
+      if (settings.bookingEmailNotificationsEnabled && settings.bookingNotificationEmail) {
+        deliveries.push(
+          sendBookingCreatedEmail({
+            bookingId,
+            recipient: settings.bookingNotificationEmail,
+            barberName: settings.barberName,
+            customerName: cleanName,
+            customerPhone: cleanPhone,
+            service: serviceCfg.name,
+            date: d,
+            time: cleanTime,
+            duration: serviceCfg.duration,
+            price: serviceCfg.price,
+          })
+        );
+      }
+      await Promise.allSettled(deliveries);
+    });
     return Response.json(
       {
         ...publicBooking,
