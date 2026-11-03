@@ -1,4 +1,5 @@
 const baseUrl = (process.env.BASE_URL || "http://localhost:3000").replace(/\/$/, "");
+const smokeTenant = (process.env.SMOKE_TENANT || "").trim();
 
 async function check(name, path, expectedStatus, options) {
   const response = await fetch(`${baseUrl}${path}`, options);
@@ -25,8 +26,13 @@ await check("validación de reserva", "/api/bookings", 400, {
   headers: { "content-type": "application/json" },
   body: JSON.stringify({ name: "", phone: "", service: "", date: "bad", time: "bad" }),
 });
-await check("fecha inválida", "/api/availability?date=bad", 400);
-await check("mes inválido", "/api/month?from=bad", 400);
+await check("tenant requerido en disponibilidad", "/api/availability?date=bad", 404);
+await check("tenant requerido en calendario mensual", "/api/month?from=bad", 404);
+if (smokeTenant) {
+  const tenant = encodeURIComponent(smokeTenant);
+  await check("fecha inválida", `/api/availability?date=bad&tenant=${tenant}`, 400);
+  await check("mes inválido", `/api/month?from=bad&tenant=${tenant}`, 400);
+}
 await check(
   "tenant inexistente en disponibilidad",
   "/api/availability?date=2026-10-22&tenant=codex-smoke-missing-tenant",
