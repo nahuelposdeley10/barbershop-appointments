@@ -60,6 +60,11 @@ SMTP_FROM_NAME=BarberYá
 
 `SMTP_APP_PASSWORD` debe ser una contraseña de aplicación de Google, no la contraseña normal de la cuenta. Si el envío falla o las variables todavía no están configuradas, la reserva igualmente queda guardada.
 
+Cada aviso usa una referencia única en el asunto para evitar que Gmail agrupe reservas diferentes. La entrega del correo depende de BarberYá; la alerta emergente depende de la configuración del teléfono:
+
+- Android: seleccionar «Todas» en las notificaciones de la cuenta de Gmail, activar «Notificar cada mensaje», sincronización y actividad en segundo plano sin restricción de batería.
+- iPhone: habilitar entrega inmediata, actualización en segundo plano y excluir Gmail del Resumen programado y de modos de Concentración que silencien avisos.
+
 Para migrar una instalación single-tenant a multi-tenant, ejecutá primero `npm run migrate:multi-tenant` para revisar el dry-run. Aplicá la migración únicamente contra una base de desarrollo aislada usando `SUPERADMIN_PASSWORD` en el entorno del proceso y `npm run migrate:multi-tenant -- --apply`.
 
 No publiques secretos, cookies, contraseñas ni la URI de MongoDB en commits, logs o mensajes.

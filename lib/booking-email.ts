@@ -60,21 +60,44 @@ function adminUrl() {
   }
 }
 
+export function bookingEmailReference(bookingId: string) {
+  const normalized = bookingId.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+  return (normalized.slice(-6) || "TURNO").padStart(6, "0");
+}
+
+export function bookingEmailSubject(
+  notification: Pick<BookingNotification, "bookingId" | "service" | "date" | "time">
+) {
+  const service = notification.service.replace(/[\r\n]+/g, " ").trim().slice(0, 60) || "Servicio";
+  const reference = bookingEmailReference(notification.bookingId);
+  return `Nueva reserva · ${service} · ${notification.date} ${notification.time} · #${reference}`
+    .slice(0, 180);
+}
+
+function bookingEmailEntityReference(bookingId: string) {
+  const normalized = bookingId.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+  return `booking-${normalized || bookingEmailReference(bookingId).toLowerCase()}`;
+}
+
 export async function sendBookingCreatedEmail(
   notification: BookingNotification
 ): Promise<BookingEmailResult> {
   const smtpUser = process.env.SMTP_USER?.trim() || "";
   const smtpPassword = process.env.SMTP_APP_PASSWORD?.replace(/\s/g, "") || "";
-  if (!smtpUser || !smtpPassword) return { sent: false, reason: "not-configured" };
-  if (!validEmail(notification.recipient)) return { sent: false, reason: "invalid-recipient" };
+  if (!smtpUser || !smtpPassword) {
+    console.warn("[booking-email] not-configured", { bookingId: notification.bookingId });
+    return { sent: false, reason: "not-configured" };
+  }
+  if (!validEmail(notification.recipient)) {
+    console.warn("[booking-email] invalid-recipient", { bookingId: notification.bookingId });
+    return { sent: false, reason: "invalid-recipient" };
+  }
 
   const businessName = notification.barberName.trim() || "Barbería";
   const dateLabel = formatBookingDate(notification.date);
   const priceLabel = formatMoney(notification.price);
   const panelUrl = adminUrl();
-  const subject = `Nueva reserva · ${notification.service} · ${notification.date} ${notification.time}`
-    .replace(/[\r\n]+/g, " ")
-    .slice(0, 180);
+  const subject = bookingEmailSubject(notification);
   const text = [
     `Nueva reserva en ${businessName}`,
     "",
@@ -138,13 +161,14 @@ export async function sendBookingCreatedEmail(
       subject,
       text,
       html,
+      headers: {
+        "X-Entity-Ref-ID": bookingEmailEntityReference(notification.bookingId),
+      },
     });
+    console.info("[booking-email] sent", { bookingId: notification.bookingId });
     return { sent: true };
-  } catch (error) {
-    console.error("[booking-email] No se pudo enviar el aviso", {
-      bookingId: notification.bookingId,
-      error: error instanceof Error ? error.message : "unknown",
-    });
+  } catch {
+    console.error("[booking-email] send-failed", { bookingId: notification.bookingId });
     return { sent: false, reason: "send-failed" };
   }
 }
