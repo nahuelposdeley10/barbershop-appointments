@@ -42,6 +42,8 @@ export function defaultSettings() {
     days,
     slotMinutes: 30,
     cantidadBarberos: 1,
+    bookingEmailNotificationsEnabled: false,
+    bookingNotificationEmail: "",
     pin: "",
     unavailableDates: [],
   };

@@ -39,6 +39,10 @@ function normalizeMapLink(value: unknown): string | null {
   }
 }
 
+function validEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.length <= 254;
+}
+
 export async function GET(req: NextRequest) {
   try {
     const context = await getAdminContext(req);
@@ -181,6 +185,25 @@ export async function PUT(req: NextRequest) {
     setStr("instagram", 120);
     setStr("facebook", 120);
     setStr("email", 120);
+    if (typeof body.bookingEmailNotificationsEnabled === "boolean") {
+      current.bookingEmailNotificationsEnabled = body.bookingEmailNotificationsEnabled;
+    }
+    if (typeof body.bookingNotificationEmail === "string") {
+      const notificationEmail = body.bookingNotificationEmail.trim().toLowerCase();
+      if (notificationEmail && !validEmail(notificationEmail)) {
+        return Response.json(
+          { error: "Ingresá un email válido para recibir las reservas." },
+          { status: 400 }
+        );
+      }
+      current.bookingNotificationEmail = notificationEmail;
+    }
+    if (current.bookingEmailNotificationsEnabled && !validEmail(current.bookingNotificationEmail || "")) {
+      return Response.json(
+        { error: "Ingresá el email que recibirá las nuevas reservas." },
+        { status: 400 }
+      );
+    }
     setStr("direccion", 200);
     setStr("mapaQuery", 500);
     if (typeof body.mapLink === "string") {
@@ -331,5 +354,13 @@ async function sanitizeSettings(doc: Record<string, unknown>, userId?: string, t
   delete plain.pin;
   delete plain.pinHash;
   const account = await getAdminAccount(userId);
-  return { ...plain, adminEmail: account.email, adminPassword: "", tenantSlug, tenantName };
+  return {
+    ...plain,
+    bookingEmailNotificationsEnabled: Boolean(plain.bookingEmailNotificationsEnabled),
+    bookingNotificationEmail: String(plain.bookingNotificationEmail || account.email || ""),
+    adminEmail: account.email,
+    adminPassword: "",
+    tenantSlug,
+    tenantName,
+  };
 }

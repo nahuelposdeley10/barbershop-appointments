@@ -66,6 +66,8 @@ const settingSchema = new mongoose.Schema({
   days: { type: [daySchema], default: [] },
   slotMinutes: { type: Number, default: 30 },
   cantidadBarberos: { type: Number, default: 1, min: 1 },
+  bookingEmailNotificationsEnabled: { type: Boolean, default: false },
+  bookingNotificationEmail: { type: String, default: "", trim: true, lowercase: true, maxlength: 254 },
   // Legacy field kept only long enough to migrate existing installations.
   pin: { type: String, default: "", select: false },
   pinHash: { type: String, default: "", select: false },
@@ -121,6 +123,8 @@ export type SettingsDoc = {
   days: DaySetting[];
   slotMinutes: number;
   cantidadBarberos: number;
+  bookingEmailNotificationsEnabled: boolean;
+  bookingNotificationEmail: string;
   pin?: string;
   pinHash?: string;
   unavailableDates: string[];

@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import { createHash } from "node:crypto";
-import { NextRequest } from "next/server";
+import { after, NextRequest } from "next/server";
 import { connectDB } from "@/lib/db";
 import {
   getSettings,
@@ -20,6 +20,7 @@ import { rateLimited } from "@/lib/rate-limit";
 import { createBookingManageToken, hashBookingPassword } from "@/lib/booking-access";
 import { logRequestError, requestId, withRequestId } from "@/lib/request-id";
 import { resolveTenantForRequest, tenantFilter } from "@/lib/tenancy";
+import { sendBookingCreatedEmail } from "@/lib/booking-email";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -245,6 +246,22 @@ export async function POST(req: NextRequest) {
     const publicBooking = { ...(booking as Record<string, unknown>) };
     delete publicBooking.manageTokenHash;
     delete publicBooking.managePasswordHash;
+    if (settings.bookingEmailNotificationsEnabled && settings.bookingNotificationEmail) {
+      after(async () => {
+        await sendBookingCreatedEmail({
+          bookingId: String(publicBooking._id || ""),
+          recipient: settings.bookingNotificationEmail,
+          barberName: settings.barberName,
+          customerName: cleanName,
+          customerPhone: cleanPhone,
+          service: serviceCfg.name,
+          date: d,
+          time: cleanTime,
+          duration: serviceCfg.duration,
+          price: serviceCfg.price,
+        });
+      });
+    }
     return Response.json(
       {
         ...publicBooking,

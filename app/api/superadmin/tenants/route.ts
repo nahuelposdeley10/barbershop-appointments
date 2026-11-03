@@ -64,6 +64,7 @@ export async function POST(req: NextRequest) {
         tenantId: tenant._id,
         ...defaultSettings(),
         barberName: name,
+        bookingNotificationEmail: ownerEmail,
       }], { session });
       created = { id: String(tenant._id), slug: tenant.slug, name: tenant.name, ownerEmail };
     });
