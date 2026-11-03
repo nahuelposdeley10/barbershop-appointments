@@ -1028,47 +1028,46 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
               <div className="grid grid-cols-[repeat(auto-fill,minmax(78px,1fr))] gap-1.5 sm:gap-2">
                 {slots.map((slot) => {
                   const reservedBookings = slot.bookings || [];
-                  if (reservedBookings.length > 0 && !slot.free) {
+                  if (reservedBookings.length > 0) {
+                    const hasAvailableCapacity = slot.free;
                     return (
                       <div
                         key={slot.time}
-                        role="button"
-                        tabIndex={0}
-                        aria-label={`${reservedBookings.length > 1 ? `Elegir uno de los ${reservedBookings.length} turnos` : "Editar turno"} a las ${slot.time}`}
-                        onClick={() => handleReservedSlotClick(reservedBookings)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            handleReservedSlotClick(reservedBookings);
-                          }
-                        }}
-                        className="col-span-1 min-w-0 cursor-pointer rounded-xl border border-accent/40 bg-accent/[0.08] p-1.5 transition hover:border-accent/75 hover:bg-accent/[0.14] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:p-2"
+                        className={`col-span-1 grid min-w-0 overflow-hidden rounded-xl border border-accent/40 bg-accent/[0.08] transition ${
+                          hasAvailableCapacity || reservedBookings.length > 1 ? "grid-cols-2" : "grid-cols-1"
+                        }`}
                       >
-                        <div className="relative min-h-5">
-                          <span className="absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-[13px] font-extrabold tabular-nums text-accent">
-                            <span className="line-through decoration-accent/75 decoration-[1px]">{slot.time}</span>
-                          </span>
-                          <span className="absolute right-0 top-1/2 flex -translate-y-1/2 items-center gap-1" aria-hidden="true">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent">
-                              <path d="m15.5 5.5 3 3M4 20l4.5-1 11-11a2.1 2.1 0 0 0-3-3l-11 11L4 20Z" />
-                            </svg>
-                            {slot.free && (
-                              <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-bold text-emerald-300">Libre</span>
-                            )}
-                          </span>
-                        </div>
-                        {slot.free && (
+                        {reservedBookings.map((booking) => (
+                          <button
+                            key={booking.id}
+                            type="button"
+                            aria-label={`${reservedBookings.length > 1 ? "Elegir" : "Editar"} el turno de ${booking.name} a las ${booking.time}`}
+                            title={`${booking.name} · ${booking.service}`}
+                            onClick={() => handleReservedSlotClick(reservedBookings)}
+                            className="group flex min-h-[58px] min-w-0 flex-col items-center justify-center gap-0.5 border-r border-accent/25 bg-accent/[0.08] px-1.5 py-1.5 text-center text-accent transition last:border-r-0 hover:bg-accent/[0.16] focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
+                          >
+                            <span className="flex min-w-0 max-w-full items-center justify-center gap-1">
+                              <span className="truncate text-[11px] font-extrabold sm:text-xs">{booking.name}</span>
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" className="shrink-0 opacity-80 transition group-hover:opacity-100">
+                                <path d="m15.5 5.5 3 3M4 20l4.5-1 11-11a2.1 2.1 0 0 1 3-3l-11 11L4 20Z" />
+                              </svg>
+                            </span>
+                            <span className="text-[10px] font-bold tabular-nums text-accent/75">{booking.time} h</span>
+                          </button>
+                        ))}
+                        {hasAvailableCapacity && (
                           <button
                             type="button"
-                            className="mt-1 min-h-8 w-full rounded-lg border border-emerald-500/35 bg-emerald-500/10 px-1.5 text-[10px] font-bold text-emerald-300 transition hover:bg-emerald-500/20"
-                            onClick={(event) => {
-                              event.stopPropagation();
+                            aria-label={`Reservar a las ${slot.time}`}
+                            className="flex min-h-[58px] min-w-0 flex-col items-center justify-center gap-0.5 bg-emerald-500/10 px-1.5 py-1.5 text-center text-emerald-300 transition hover:bg-emerald-500/20 focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-400"
+                            onClick={() => {
                               setSelectedSlot(slot.time);
                               setStep(4);
                               setError("");
                             }}
                           >
-                            + Reservar
+                            <span className="text-sm font-extrabold tabular-nums">{slot.time}</span>
+                            <span className="text-[10px] font-bold">+ Reservar</span>
                           </button>
                         )}
                       </div>
