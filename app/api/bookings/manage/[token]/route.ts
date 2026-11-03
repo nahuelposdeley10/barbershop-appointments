@@ -58,6 +58,12 @@ function publicBooking(booking: { toObject: () => Record<string, unknown> }) {
   return result;
 }
 
+function bookingHasStarted(booking: { date: string; time: string }, now = new Date()) {
+  const today = localDateStr(now);
+  if (booking.date < today) return true;
+  return booking.date === today && toMinutes(booking.time) <= localMinutes(now);
+}
+
 export async function GET(_req: NextRequest, { params }: Ctx) {
   const { token } = await params;
   if (!validToken(token)) return Response.json({ error: "Link inválido" }, { status: 400 });
@@ -89,6 +95,12 @@ export async function DELETE(_req: NextRequest, { params }: Ctx) {
   if (booking.status === "cancelled") return Response.json(publicBooking(booking));
   if (booking.status === "done") {
     return Response.json({ error: "Este turno ya fue completado" }, { status: 409 });
+  }
+  if (bookingHasStarted(booking)) {
+    return Response.json(
+      { error: "La hora de este turno ya llegó y no se puede cancelar" },
+      { status: 409 }
+    );
   }
   booking.status = "cancelled";
   booking.cancelledAt = new Date();

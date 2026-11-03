@@ -86,6 +86,7 @@ function bookingNoticePresentation(message: string): { title: string; tone: Stat
   if (/cancel/i.test(message)) return { title: "Turno cancelado", tone: "success" };
   if (/actualiz/i.test(message)) return { title: "Turno actualizado", tone: "success" };
   if (/complet/i.test(message)) return { title: "Turno completado", tone: "success" };
+  if (/hora de tu turno ya llegó|comenz/i.test(message)) return { title: "Turno iniciado", tone: "info" };
   if (/finaliz/i.test(message)) return { title: "Turno finalizado", tone: "info" };
   if (/no está disponible|quitaron|quitó/i.test(message)) return { title: "Turno no disponible", tone: "warning" };
   return { title: "Información de tus turnos", tone: "info" };
@@ -106,25 +107,15 @@ function localDateTimeStr(d: Date) {
   return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}`;
 }
 
-/** Fin del turno (fecha + hora + duración) en el mismo formato local. */
-function bookingEndStr(booking: { date?: string; time?: string; duration?: number }) {
-  const [y, m, d] = (booking.date || "").split("-").map(Number);
-  const [hh, mm] = (booking.time || "").split(":").map(Number);
-  if (![y, m, d, hh, mm].every(Number.isFinite)) return "";
-  const end = new Date(Date.UTC(y, m - 1, d, hh, mm + Math.max(0, Number(booking.duration) || 0)));
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${end.getUTCFullYear()}-${pad(end.getUTCMonth() + 1)}-${pad(end.getUTCDate())} ${pad(end.getUTCHours())}:${pad(end.getUTCMinutes())}`;
-}
-
-function isBookingFinished(booking: { date?: string; time?: string; duration?: number }) {
-  const end = bookingEndStr(booking);
-  return end ? localDateTimeStr(new Date()) >= end : false;
+function isBookingStarted(booking: { date?: string; time?: string }) {
+  if (!booking.date || !booking.time) return false;
+  return localDateTimeStr(new Date()) >= `${booking.date} ${booking.time}`;
 }
 
 function isBookingActive(booking: BookingConfirmation) {
   if (booking.status === "cancelled" || booking.status === "done") return false;
   if ((!booking.manageToken && !booking.manageId) || !booking.date || !booking.time) return false;
-  return !isBookingFinished(booking);
+  return !isBookingStarted(booking);
 }
 
 function persistBookings(bookings: BookingConfirmation[], tenantSlug?: string) {
@@ -175,7 +166,7 @@ function inactiveNotice(booking: { status?: string }) {
   if (booking.status === "done") {
     return "Tu turno ya fue completado. Cuando quieras, podés reservar uno nuevo.";
   }
-  return "Tu turno ya finalizó. Cuando quieras, podés reservar uno nuevo.";
+  return "La hora de tu turno ya llegó. Ya no aparece entre tus próximos turnos y ahora lo gestiona la barbería.";
 }
 
 type VerifyDeps = {
@@ -191,7 +182,7 @@ type VerifyResult =
 
 /**
  * Consulta al servidor el estado real de cada turno guardado: actualiza los
- * activos, quita de la lista los cancelados/completados/vencidos y conserva
+ * activos, quita de la lista los cancelados/completados/iniciados y conserva
  * los que no se pudieron consultar por problemas de conexión.
  */
 async function verifyBookings(
@@ -380,6 +371,18 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [hydrated, bookingTokensKey]);
+
+  useEffect(() => {
+    if (!hydrated || bookings.length === 0) return;
+    const removeStartedBookings = () => {
+      const startedBooking = bookings.find((entry) => !isBookingActive(entry));
+      if (!startedBooking) return;
+      setBookings((current) => current.filter(isBookingActive));
+      setBookingNotice(inactiveNotice(startedBooking));
+    };
+    const intervalId = window.setInterval(removeStartedBookings, 10_000);
+    return () => window.clearInterval(intervalId);
+  }, [hydrated, bookings]);
 
   // Mantener la lista de turnos guardada en el dispositivo.
   useEffect(() => {
