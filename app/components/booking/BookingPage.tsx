@@ -244,6 +244,8 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
   const [selectedSlot, setSelectedSlot] = useState("");
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [loading, setLoading] = useState(true);
+  const [availabilityReady, setAvailabilityReady] = useState(false);
+  const [initialLoadError, setInitialLoadError] = useState("");
   const [error, setError] = useState("");
 
   const [name, setName] = useState("");
@@ -348,10 +350,16 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
         setMessage(data.message || "");
         setServices(data.services || []);
         setSlots(data.slots || []);
+        setAvailabilityReady(true);
+        setInitialLoadError("");
         setError("");
       })
       .catch((err) => {
-        if (!cancelled) setError(err.message);
+        if (!cancelled) {
+          const message = err instanceof Error ? err.message : "No pudimos cargar la barbería";
+          setError(message);
+          setInitialLoadError(message);
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -399,6 +407,8 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
       setMessage(data.message || "");
       setServices(data.services || []);
       setSlots(data.slots || []);
+      setAvailabilityReady(true);
+      setInitialLoadError("");
       setError("");
       return data;
     } catch (err) {
@@ -595,14 +605,8 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
     }
   }
 
-  if (!hydrated) {
-    return (
-      <main className="booking-bg grid min-h-[100svh] place-items-center px-4">
-        <p className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-5 py-4 text-sm font-semibold text-[var(--muted)]">
-          Buscando tus turnos…
-        </p>
-      </main>
-    );
+  if (!hydrated || !availabilityReady) {
+    return <BookingLoadingState error={initialLoadError} />;
   }
 
   return (
@@ -1295,6 +1299,38 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span>{label}</span>
       {children}
     </label>
+  );
+}
+
+function BookingLoadingState({ error }: { error?: string }) {
+  return (
+    <main className="booking-bg grid min-h-[100svh] place-items-center px-4">
+      <div className="flex w-full max-w-sm flex-col items-center rounded-[26px] border border-[var(--border)] bg-[var(--card)] px-6 py-8 text-center shadow-[0_18px_60px_rgba(0,0,0,0.22)]">
+        <span className="text-[10px] font-extrabold uppercase tracking-[3px] text-accent">BarberYá</span>
+        <BarberPole className="mt-4 w-44 h-[8px]" />
+        {error ? (
+          <>
+            <p role="alert" className="mt-5 text-sm font-bold text-[var(--red)]">No pudimos cargar esta barbería</p>
+            <p className="mt-2 text-sm leading-5 text-[var(--muted)]">Revisá tu conexión e intentá nuevamente.</p>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="mt-5 min-h-11 rounded-xl bg-gradient-to-b from-[var(--accent)] to-[var(--accent-strong)] px-5 py-3 text-sm font-extrabold text-[#1a1406]"
+            >
+              Reintentar
+            </button>
+          </>
+        ) : (
+          <div role="status" aria-live="polite" className="mt-5 flex flex-col items-center gap-3">
+            <span className="grid h-10 w-10 animate-spin place-items-center rounded-full border-4 border-[var(--border)] border-t-accent" aria-hidden="true" />
+            <div>
+              <p className="text-sm font-bold text-[var(--text)]">Cargando la barbería…</p>
+              <p className="mt-1 text-xs text-[var(--muted)]">Preparando servicios, horarios y reservas</p>
+            </div>
+          </div>
+        )}
+      </div>
+    </main>
   );
 }
 
