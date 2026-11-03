@@ -707,7 +707,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
 
         {bookingChoices && (
           <div
-            className="fixed inset-0 z-[100] flex items-end justify-center bg-black/75 p-3 backdrop-blur-sm sm:items-center sm:p-6"
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 px-3 pt-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] backdrop-blur-sm sm:p-6"
             role="presentation"
             onClick={(event) => {
               if (event.target === event.currentTarget) setBookingChoices(null);
@@ -717,7 +717,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
               role="dialog"
               aria-modal="true"
               aria-labelledby="booking-choice-title"
-              className="w-full max-w-md rounded-[26px] border border-accent/35 bg-[var(--card)] shadow-2xl shadow-black/50"
+              className="max-h-[calc(100dvh-4rem)] w-full max-w-md overflow-y-auto overscroll-contain rounded-[26px] border border-accent/35 bg-[var(--card)]"
             >
               <div className="h-1 bg-gradient-to-r from-accent via-amber-300 to-transparent" aria-hidden="true" />
               <div className="p-4 sm:p-6">
@@ -811,7 +811,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
 
         {bookingToEdit && (
           <div
-            className="fixed inset-0 z-[100] flex items-end justify-center bg-black/75 p-3 backdrop-blur-sm sm:items-center sm:p-6"
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 px-3 pt-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] backdrop-blur-sm sm:p-6"
             role="presentation"
             onClick={(event) => {
               if (event.target === event.currentTarget) closeEditBooking();
@@ -821,7 +821,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
               role="dialog"
               aria-modal="true"
               aria-labelledby="edit-booking-title"
-              className="max-h-[min(90svh,680px)] w-full max-w-lg overflow-y-auto rounded-[26px] border border-accent/35 bg-[var(--card)] shadow-2xl shadow-black/50"
+              className="max-h-[min(calc(100dvh-4rem),680px)] w-full max-w-lg overflow-y-auto overscroll-contain rounded-[26px] border border-accent/35 bg-[var(--card)]"
             >
               <div className="h-1 bg-gradient-to-r from-accent via-amber-300 to-transparent" aria-hidden="true" />
               <div className="p-4 sm:p-6">
@@ -918,10 +918,10 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
 
                   {editError && <p role="alert" className="text-sm font-semibold text-[var(--red)]">{editError}</p>}
                 </div>
-                <div className="mt-5 flex items-center gap-2 border-t border-[var(--border)] pt-4">
+                <div className="sticky bottom-0 z-10 -mb-4 mt-4 flex items-center gap-2 border-t border-[var(--border)] bg-[var(--card)] py-4 sm:-mb-6 sm:pb-6">
                   <button type="button" disabled={editSaving} onClick={requestCancelFromEditor} className="min-h-10 shrink-0 rounded-lg px-2 text-[11px] font-bold text-red-300 transition hover:bg-red-500/10 disabled:opacity-50 sm:px-3 sm:text-xs">Cancelar</button>
                   <button type="button" disabled={editSaving} onClick={() => closeEditBooking()} className="min-h-10 shrink-0 rounded-lg border border-[var(--border)] px-3 text-xs font-bold text-[var(--muted)] transition hover:border-accent/40 hover:text-[var(--text)] disabled:opacity-50">Volver</button>
-                  <button type="button" disabled={editSaving || editLoading || !editTime} onClick={confirmEditBooking} className="min-h-10 flex-1 rounded-lg bg-gradient-to-b from-accent to-accent-strong px-3 text-xs font-extrabold text-[#1a1406] shadow-md shadow-accent/10 transition hover:brightness-105 disabled:opacity-60">{editSaving ? "Guardando…" : "Guardar cambio"}</button>
+                  <button type="button" disabled={editSaving || editLoading || !editTime} onClick={confirmEditBooking} className="min-h-10 flex-1 rounded-lg bg-accent px-3 text-xs font-extrabold text-[#1a1406] transition hover:bg-accent-hover disabled:opacity-60">{editSaving ? "Guardando…" : "Guardar cambio"}</button>
                 </div>
               </div>
             </section>
