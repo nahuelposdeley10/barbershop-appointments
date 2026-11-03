@@ -46,7 +46,19 @@ npm run lint
 npm run build
 ```
 
-`npm test` ejecuta un smoke test sin crear turnos. También acepta `BASE_URL` para verificar otro entorno. Después de publicar, comprobá `GET /api/health` y conservá backups de MongoDB con un procedimiento probado de restauración.
+`npm test` ejecuta un smoke test sin crear turnos. También acepta `BASE_URL` para verificar otro entorno y `SMOKE_TENANT` para validar fechas contra una barbería existente. Después de publicar, comprobá `GET /api/health` y conservá backups de MongoDB con un procedimiento probado de restauración.
+
+## Avisos por email
+
+Las barberías pueden activar desde Configuración un aviso por cada nueva reserva y elegir su propio correo destinatario. Todos los avisos salen desde una única cuenta Gmail de BarberYá. Para habilitar el envío localmente y en Vercel, configurá:
+
+```bash
+SMTP_USER=barberya.notificaciones@gmail.com
+SMTP_APP_PASSWORD=contraseña-de-aplicacion-de-google
+SMTP_FROM_NAME=BarberYá
+```
+
+`SMTP_APP_PASSWORD` debe ser una contraseña de aplicación de Google, no la contraseña normal de la cuenta. Si el envío falla o las variables todavía no están configuradas, la reserva igualmente queda guardada.
 
 Para migrar una instalación single-tenant a multi-tenant, ejecutá primero `npm run migrate:multi-tenant` para revisar el dry-run. Aplicá la migración únicamente contra una base de desarrollo aislada usando `SUPERADMIN_PASSWORD` en el entorno del proceso y `npm run migrate:multi-tenant -- --apply`.
 

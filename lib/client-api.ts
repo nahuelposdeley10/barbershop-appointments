@@ -112,6 +112,8 @@ export type Settings = {
   days: { day: number; enabled: boolean; open: string; close: string }[];
   slotMinutes: number;
   cantidadBarberos: number;
+  bookingEmailNotificationsEnabled: boolean;
+  bookingNotificationEmail: string;
   adminEmail: string;
   adminPassword?: string;
   unavailableDates: string[];

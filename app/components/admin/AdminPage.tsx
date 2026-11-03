@@ -2156,6 +2156,52 @@ export default function AdminPage({
               )}
             </p>
 
+            <h3 className="text-[15px] font-extrabold text-accent mt-1.5">Avisos de nuevas reservas</h3>
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-soft)] p-3.5 sm:p-4">
+              <label className="flex cursor-pointer items-start justify-between gap-4">
+                <span className="min-w-0">
+                  <strong className="block text-sm text-[var(--text)]">Recibir un email por cada reserva</strong>
+                  <span className="mt-1 block text-[12.5px] leading-5 text-[var(--muted)]">
+                    El aviso se envía después de confirmar el turno y no demora la reserva del cliente.
+                  </span>
+                </span>
+                <span className="relative mt-0.5 inline-flex shrink-0 items-center">
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    className="peer sr-only"
+                    checked={draft.bookingEmailNotificationsEnabled}
+                    onChange={(event) => setDraft({
+                      ...draft,
+                      bookingEmailNotificationsEnabled: event.target.checked,
+                    })}
+                  />
+                  <span className="h-7 w-12 rounded-full border border-[var(--border)] bg-[var(--card-2)] transition peer-checked:border-emerald-400/60 peer-checked:bg-emerald-500/25 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent" />
+                  <span className="pointer-events-none absolute left-1 h-5 w-5 rounded-full bg-[var(--muted)] shadow transition-transform peer-checked:translate-x-5 peer-checked:bg-emerald-300" />
+                </span>
+              </label>
+
+              <div className="mt-4 border-t border-[var(--border)] pt-4">
+                <Field label="Email que recibirá los avisos">
+                  <input
+                    type="email"
+                    className="input w-full max-w-[420px] disabled:cursor-not-allowed disabled:opacity-55"
+                    value={draft.bookingNotificationEmail}
+                    disabled={!draft.bookingEmailNotificationsEnabled}
+                    onChange={(event) => setDraft({
+                      ...draft,
+                      bookingNotificationEmail: event.target.value,
+                    })}
+                    placeholder="dueno@gmail.com"
+                    autoComplete="email"
+                  />
+                </Field>
+                <p className="mt-2 text-[12.5px] leading-5 text-[var(--muted)]">
+                  Puede ser Gmail u otro correo. BarberYá usa una cuenta central como remitente; no necesitás conectar tu contraseña personal.
+                </p>
+              </div>
+            </div>
+
             <h3 className="text-[15px] font-extrabold text-accent mt-1.5">Acceso</h3>
             <Field label="Email de acceso">
               <input
