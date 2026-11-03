@@ -85,5 +85,5 @@ export default function HairCelebration({ sequence }: { sequence: number }) {
     };
   }, [sequence]);
 
-  return <canvas ref={canvasRef} aria-hidden="true" className="pointer-events-none fixed inset-0 z-[110] h-full w-full motion-reduce:hidden" />;
+  return <canvas ref={canvasRef} aria-hidden="true" className="pointer-events-none fixed inset-0 z-[130] h-full w-full motion-reduce:hidden" />;
 }

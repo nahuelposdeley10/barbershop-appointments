@@ -43,9 +43,11 @@ function canManageBooking(
   password?: string,
   phone?: string
 ) {
-  if (!booking.managePasswordHash) return validToken(identifier);
-  if (!password || !verifyBookingPassword(password, booking.managePasswordHash)) return false;
+  // El token aleatorio guardado en el dispositivo es una credencial suficiente:
+  // la consulta ya encontró el turno por el hash de ese token.
   if (validToken(identifier)) return true;
+  if (!booking.managePasswordHash) return false;
+  if (!password || !verifyBookingPassword(password, booking.managePasswordHash)) return false;
   return !phone || normalizeWhatsapp(phone) === booking.phone;
 }
 

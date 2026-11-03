@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import Image from "next/image";
 import {
   createBooking,
@@ -18,6 +18,7 @@ import ScheduleCalendar from "./ScheduleCalendar";
 import Navbar from "../Navbar";
 import ConfirmDialog from "../ConfirmDialog";
 import HairCelebration from "./HairCelebration";
+import BookingSuccessModal from "./BookingSuccessModal";
 
 const DAY_NAMES = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const MONTH_NAMES = [
@@ -31,6 +32,10 @@ const TIME_ZONE = "America/Argentina/Buenos_Aires";
 const BOOKINGS_STORAGE_KEY = "barberia:bookings";
 const LEGACY_BOOKING_STORAGE_KEY = "barberia:booking-token";
 const TERMS_STORAGE_KEY = "barberia:terms-accepted";
+
+function tenantBookingsStorageKey(tenantSlug?: string) {
+  return `${BOOKINGS_STORAGE_KEY}:${tenantSlug || "default"}`;
+}
 
 /** ¿La persona ya aceptó los términos en este dispositivo? */
 function loadTermsAccepted() {
@@ -66,6 +71,14 @@ function formatDate(dateStr: string) {
 
 function currency(n: number) {
   return `$${Number(n || 0).toLocaleString("es-AR")}`;
+}
+
+function requiresBookingPassword(booking?: BookingConfirmation | null) {
+  return Boolean(
+    booking &&
+    !booking.manageToken &&
+    (booking.managePasswordRequired || booking.manageId)
+  );
 }
 
 /** Fecha y hora local de la barbería en formato "YYYY-MM-DD HH:MM" (para comparar). */
@@ -104,10 +117,11 @@ function isBookingActive(booking: BookingConfirmation) {
   return !isBookingFinished(booking);
 }
 
-function persistBookings(bookings: BookingConfirmation[]) {
+function persistBookings(bookings: BookingConfirmation[], tenantSlug?: string) {
   try {
-    window.localStorage.setItem(BOOKINGS_STORAGE_KEY, JSON.stringify({ bookings }));
+    window.localStorage.setItem(tenantBookingsStorageKey(tenantSlug), JSON.stringify({ bookings }));
     // La migración terminó cuando el formato nuevo quedó escrito.
+    window.localStorage.removeItem(BOOKINGS_STORAGE_KEY);
     window.localStorage.removeItem(LEGACY_BOOKING_STORAGE_KEY);
   } catch {
     // Si el navegador bloquea el storage, los turnos siguen disponibles en el servidor.
@@ -115,8 +129,10 @@ function persistBookings(bookings: BookingConfirmation[]) {
 }
 
 /** Lee los turnos guardados en el dispositivo (sin modificar el storage). */
-function loadStoredBookings(): BookingConfirmation[] {
-  const raw = window.localStorage.getItem(BOOKINGS_STORAGE_KEY);
+function loadStoredBookings(tenantSlug?: string): BookingConfirmation[] {
+  const scopedStorageKey = tenantBookingsStorageKey(tenantSlug);
+  const scopedRaw = window.localStorage.getItem(scopedStorageKey);
+  const raw = scopedRaw || window.localStorage.getItem(BOOKINGS_STORAGE_KEY);
   if (raw) {
     try {
       const parsed = JSON.parse(raw) as { bookings?: unknown };
@@ -127,7 +143,7 @@ function loadStoredBookings(): BookingConfirmation[] {
         );
       }
     } catch {
-      window.localStorage.removeItem(BOOKINGS_STORAGE_KEY);
+      window.localStorage.removeItem(scopedRaw ? scopedStorageKey : BOOKINGS_STORAGE_KEY);
     }
   }
   // Compatibilidad con el formato anterior (un solo turno por dispositivo).
@@ -248,7 +264,9 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [celebrationSequence, setCelebrationSequence] = useState(0);
+  const [bookingSuccess, setBookingSuccess] = useState<BookingConfirmation | null>(null);
   const [bookings, setBookings] = useState<BookingConfirmation[]>([]);
+  const [showAllBookings, setShowAllBookings] = useState(false);
   const [cancellingToken, setCancellingToken] = useState<string | null>(null);
   const [bookingToCancel, setBookingToCancel] = useState<BookingConfirmation | null>(null);
   const [bookingToEdit, setBookingToEdit] = useState<BookingConfirmation | null>(null);
@@ -293,6 +311,11 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
   const freeCount = slots.filter((s) => s.free).length;
   const selectedServiceDetails = services.find((service) => service.name === selectedService);
   const bookingTokensKey = bookings.map((b) => b.manageToken || "").join(",");
+  const upcomingBookings = [...bookings].sort((a, b) =>
+    `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`)
+  );
+  const visibleBookings = showAllBookings ? upcomingBookings : upcomingBookings.slice(0, 1);
+  const closeBookingSuccess = useCallback(() => setBookingSuccess(null), []);
 
   useEffect(() => {
     document.title = barberName
@@ -306,7 +329,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
     queueMicrotask(() => {
       if (didHydrate.current) return;
       didHydrate.current = true;
-      const stored = loadStoredBookings();
+      const stored = loadStoredBookings(tenantSlug);
       const activeList = stored.filter(isBookingActive);
       const inactive = stored.find((entry) => !isBookingActive(entry));
       setBookings(activeList);
@@ -321,7 +344,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
         );
       }
     });
-  }, []);
+  }, [tenantSlug]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -349,8 +372,8 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
   // Mantener la lista de turnos guardada en el dispositivo.
   useEffect(() => {
     if (!hydrated) return;
-    persistBookings(bookings);
-  }, [hydrated, bookings]);
+    persistBookings(bookings, tenantSlug);
+  }, [hydrated, bookings, tenantSlug]);
 
   useEffect(() => {
     let cancelled = false;
@@ -487,9 +510,8 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
           ? [booking, ...prev.filter((entry) => entry.manageToken !== booking.manageToken)]
           : prev
       );
-      setBookingNotice(
-        `Turno reservado: ${booking.service} · ${formatDate(booking.date)} · ${booking.time} h. Para editarlo, volvé a ese día y tocá el turno reservado.`
-      );
+      setBookingNotice("");
+      setBookingSuccess(booking);
       setCancelError("");
       setBookingPassword("");
       setStep(1);
@@ -574,7 +596,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
   async function confirmEditBooking() {
     if (!bookingToEdit || editSaving) return;
     const identifier = bookingToEdit.manageToken || bookingToEdit.manageId || bookingToEdit._id;
-    const requiresPassword = Boolean(bookingToEdit.managePasswordRequired || bookingToEdit.manageId);
+    const requiresPassword = requiresBookingPassword(bookingToEdit);
     if (!editDate || !editTime || !editService) {
       setEditError("Elegí el servicio, la fecha y el horario");
       return;
@@ -613,7 +635,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
   async function confirmCancelBooking() {
     if (!bookingToCancel || cancellingToken) return;
     const identifier = bookingToCancel.manageToken || bookingToCancel.manageId || bookingToCancel._id;
-    const requiresPassword = Boolean(bookingToCancel.managePasswordRequired || bookingToCancel.manageId);
+    const requiresPassword = requiresBookingPassword(bookingToCancel);
     if (requiresPassword && cancelPassword.length < 6) {
       setCancelError("Ingresá la contraseña que creaste al reservar");
       return;
@@ -646,6 +668,14 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
     <div className="booking-bg">
       {celebrationSequence > 0 && <HairCelebration sequence={celebrationSequence} />}
       <Navbar nombre={barberName} logo={logo} tenantSlug={tenantSlug || null} />
+      {bookingSuccess && (
+        <BookingSuccessModal
+          service={bookingSuccess.service}
+          dateLabel={formatDate(bookingSuccess.date)}
+          time={bookingSuccess.time}
+          onClose={closeBookingSuccess}
+        />
+      )}
       <div className="flex flex-col gap-4 sm:gap-5 max-w-[720px] w-full mx-auto pt-20 sm:pt-24 px-3.5 sm:px-5 pb-12 sm:pb-16">
 
         {bookingNotice && (
@@ -678,6 +708,88 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
           </div>
         </section>
 
+        {upcomingBookings.length > 0 && (
+          <section
+            aria-labelledby="upcoming-bookings-title"
+            className="rounded-[18px] border border-emerald-400/30 bg-emerald-500/[0.07] p-3"
+          >
+            <div className="flex items-center gap-2.5">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border border-emerald-400/25 bg-emerald-500/10 text-emerald-300" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M8 2v4M16 2v4M3 10h18" />
+                  <rect x="3" y="4" width="18" height="18" rx="3" />
+                  <path d="m9 16 2 2 4-4" />
+                </svg>
+              </span>
+              <div className="min-w-0 flex-1">
+                <h2 id="upcoming-bookings-title" className="text-sm font-extrabold text-[var(--text)]">
+                  {upcomingBookings.length === 1 ? "Tu próximo turno" : "Tus próximos turnos"}
+                </h2>
+                <p className="text-[10.5px] text-[var(--muted)]">En este dispositivo</p>
+              </div>
+              <span className="grid h-6 min-w-6 place-items-center rounded-full border border-emerald-400/25 bg-emerald-500/10 px-1.5 text-[10px] font-extrabold text-emerald-300">
+                {upcomingBookings.length}
+              </span>
+            </div>
+
+            <div className="mt-2.5 flex flex-col gap-1.5">
+              {visibleBookings.map((booking) => (
+                <article key={booking._id} className="flex min-w-0 items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--card)] px-2.5 py-2">
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border border-accent/25 bg-accent/10 text-accent" aria-hidden="true">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="9" />
+                        <path d="M12 7v5l3 2" />
+                      </svg>
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <h3
+                        className="truncate text-[12.5px] font-extrabold leading-4 text-[var(--text)]"
+                        title={`${booking.service} · ${booking.name}`}
+                      >
+                        {booking.service}<span className="font-semibold text-[var(--muted)]"> · {booking.name}</span>
+                      </h3>
+                      <p className="truncate text-[10.5px] leading-4 text-[var(--muted)]">
+                        {formatDate(booking.date)} · {booking.time} h
+                      </p>
+                    </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCancelBooking(booking)}
+                    aria-label={`Cancelar turno de ${booking.service} del ${formatDate(booking.date)} a las ${booking.time}`}
+                    className="min-h-9 shrink-0 rounded-lg border border-red-400/25 bg-red-400/[0.07] px-2.5 py-1.5 text-[11px] font-bold text-red-300 transition hover:border-red-400/50 hover:bg-red-400/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-400"
+                  >
+                    Cancelar
+                  </button>
+                </article>
+              ))}
+            </div>
+            {upcomingBookings.length > 1 && (
+              <button
+                type="button"
+                aria-expanded={showAllBookings}
+                onClick={() => setShowAllBookings((current) => !current)}
+                className="mt-2 flex min-h-9 w-full items-center justify-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-[11px] font-bold text-[var(--muted)] transition hover:border-emerald-400/35 hover:text-[var(--text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+              >
+                {showAllBookings ? "Mostrar solo el próximo" : `Ver todos (${upcomingBookings.length})`}
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className={`transition-transform ${showAllBookings ? "rotate-180" : ""}`}
+                  aria-hidden="true"
+                >
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </button>
+            )}
+          </section>
+        )}
+
         <ConfirmDialog
           open={Boolean(bookingToCancel)}
           title="¿Cancelar este turno?"
@@ -693,7 +805,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
             setCancelError("");
           }}
         >
-          {(bookingToCancel?.managePasswordRequired || bookingToCancel?.manageId) && (
+          {requiresBookingPassword(bookingToCancel) && (
             <div className="mt-4">
               <label className="flex flex-col gap-1.5 text-sm font-bold text-[var(--text)]">
                 Contraseña del turno
@@ -908,7 +1020,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
                     </select>
                   </Field>
                   <div className="col-span-2">
-                    {(bookingToEdit.managePasswordRequired || bookingToEdit.manageId) && (
+                    {requiresBookingPassword(bookingToEdit) && (
                       <Field label="Contraseña del turno">
                       <input
                         type="password"
