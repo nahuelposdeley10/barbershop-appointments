@@ -26,6 +26,7 @@ export type AvailabilityBooking = {
 export type Slot = {
   time: string;
   free: boolean;
+  past?: boolean;
   ocupadas: number;
   sillas: number;
   bookings?: AvailabilityBooking[];

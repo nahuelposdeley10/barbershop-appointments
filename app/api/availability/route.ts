@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
               date: booking.date,
               time: booking.time,
             }));
-          return { time, free, ocupadas, sillas, bookings };
+          return { time, free, past, ocupadas, sillas, bookings };
         });
     }
 
