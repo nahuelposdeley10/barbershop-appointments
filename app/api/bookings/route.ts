@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { createHash } from "node:crypto";
 import { NextRequest } from "next/server";
 import { connectDB } from "@/lib/db";
 import {
@@ -22,6 +23,20 @@ import { resolveTenantForRequest, tenantFilter } from "@/lib/tenancy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function normalizeCustomerName(value: string) {
+  return value
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("es-AR");
+}
+
+function customerLockKey(name: string, phone: string, service: string) {
+  const identity = `${normalizeCustomerName(name)}\u0000${phone}\u0000${service.normalize("NFKC").toLocaleLowerCase("es-AR")}`;
+  return `customer:${createHash("sha256").update(identity).digest("hex")}`;
+}
 
 export async function POST(req: NextRequest) {
   const id = requestId(req);
@@ -133,16 +148,47 @@ export async function POST(req: NextRequest) {
     }
 
     const manageToken = createBookingManageToken();
+    const duplicateLock = customerLockKey(cleanName, cleanPhone, cleanService);
     const session = await mongoose.startSession();
     let booking: unknown;
     try {
       await session.withTransaction(async () => {
+        // Serializa intentos del mismo cliente para impedir duplicados incluso
+        // si llegan dos solicitudes simultáneas o desde dispositivos distintos.
+        await BookingLock.findOneAndUpdate(
+          { ...tenantFilter(tenantId), date: duplicateLock },
+          { $setOnInsert: { tenantId, date: duplicateLock } },
+          { upsert: true, new: true, session }
+        );
+
         // Serializa las reservas del mismo día para evitar sobreventa por carreras concurrentes.
         await BookingLock.findOneAndUpdate(
           { ...tenantFilter(tenantId), date: d },
           { $setOnInsert: { tenantId, date: d } },
           { upsert: true, new: true, session }
         );
+
+        const normalizedName = normalizeCustomerName(cleanName);
+        const possibleDuplicates = await Booking.find({
+          ...tenantFilter(tenantId),
+          phone: cleanPhone,
+          service: cleanService,
+          status: "confirmed",
+          date: { $gte: today },
+        })
+          .select("name date time duration")
+          .session(session)
+          .lean();
+        const hasActiveDuplicate = possibleDuplicates.some((item) => {
+          if (normalizeCustomerName(item.name) !== normalizedName) return false;
+          if (item.date > today) return true;
+          if (!isValidTime(item.time)) return true;
+          return toMinutes(item.time) + Math.max(0, item.duration || 0) > nowMinutes;
+        });
+        if (hasActiveDuplicate) {
+          throw new BookingDuplicateError();
+        }
+
         const openings = await Booking.find({ ...tenantFilter(tenantId), date: d, status: { $ne: "cancelled" } })
           .select("time duration")
           .session(session)
@@ -175,6 +221,12 @@ export async function POST(req: NextRequest) {
         booking = created[0].toObject();
       });
     } catch (err) {
+      if (err instanceof BookingDuplicateError) {
+        return Response.json(
+          { error: "Ya tenés una reserva activa para este servicio. No podés reservar otra hasta completar o cancelar la actual." },
+          { status: 409 }
+        );
+      }
       if (err instanceof BookingConflictError) {
         return Response.json(
           { error: "Ese horario está lleno en todas las sillas, elegí otro." },
@@ -184,6 +236,11 @@ export async function POST(req: NextRequest) {
       throw err;
     } finally {
       await session.endSession();
+      try {
+        await BookingLock.deleteOne({ ...tenantFilter(tenantId), date: duplicateLock });
+      } catch (cleanupError) {
+        logRequestError("cleanup-customer-booking-lock", id, cleanupError);
+      }
     }
     const publicBooking = { ...(booking as Record<string, unknown>) };
     delete publicBooking.manageTokenHash;
@@ -204,3 +261,4 @@ export async function POST(req: NextRequest) {
 }
 
 class BookingConflictError extends Error {}
+class BookingDuplicateError extends Error {}
