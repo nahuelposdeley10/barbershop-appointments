@@ -17,6 +17,7 @@ import { BarberPole, ServiceThumb } from "./BarberIcons";
 import ScheduleCalendar from "./ScheduleCalendar";
 import Navbar from "../Navbar";
 import ConfirmDialog from "../ConfirmDialog";
+import HairCelebration from "./HairCelebration";
 
 const DAY_NAMES = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const MONTH_NAMES = [
@@ -246,11 +247,16 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
   const [bookingPassword, setBookingPassword] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [celebrationSequence, setCelebrationSequence] = useState(0);
   const [bookings, setBookings] = useState<BookingConfirmation[]>([]);
   const [cancellingToken, setCancellingToken] = useState<string | null>(null);
   const [bookingToCancel, setBookingToCancel] = useState<BookingConfirmation | null>(null);
   const [bookingToEdit, setBookingToEdit] = useState<BookingConfirmation | null>(null);
-  const [bookingChoices, setBookingChoices] = useState<AvailabilityBooking[] | null>(null);
+  const [bookingChoices, setBookingChoices] = useState<{
+    time: string;
+    bookings: AvailabilityBooking[];
+    canAdd: boolean;
+  } | null>(null);
   const [editService, setEditService] = useState("");
   const [editDate, setEditDate] = useState("");
   const [editTime, setEditTime] = useState("");
@@ -456,6 +462,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
         time: selectedSlot,
         managePassword: bookingPassword,
       }, tenantSlug);
+      setCelebrationSequence((previous) => previous + 1);
       setBookings((prev) =>
         booking.manageToken
           ? [booking, ...prev.filter((entry) => entry.manageToken !== booking.manageToken)]
@@ -521,12 +528,12 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
     });
   }
 
-  function handleReservedSlotClick(reservedBookings: AvailabilityBooking[]) {
-    if (reservedBookings.length === 1) {
-      handleEditAvailabilityBooking(reservedBookings[0]);
-      return;
-    }
-    setBookingChoices(reservedBookings);
+  function handleReservedSlotClick(
+    reservedBookings: AvailabilityBooking[],
+    time: string,
+    canAdd: boolean
+  ) {
+    setBookingChoices({ time, bookings: reservedBookings, canAdd });
   }
 
   function requestCancelFromEditor() {
@@ -618,6 +625,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
 
   return (
     <div className="booking-bg">
+      {celebrationSequence > 0 && <HairCelebration sequence={celebrationSequence} />}
       <Navbar nombre={barberName} logo={logo} tenantSlug={tenantSlug || null} />
       <div className="flex flex-col gap-4 sm:gap-5 max-w-[720px] w-full mx-auto pt-20 sm:pt-24 px-3.5 sm:px-5 pb-12 sm:pb-16">
 
@@ -721,11 +729,14 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
                         <circle cx="9" cy="7" r="4" />
                         <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
                       </svg>
-                      Más de un turno
+                      Gestionar horario
                     </p>
-                    <h2 id="booking-choice-title" className="mt-3 text-[22px] font-extrabold tracking-tight sm:text-2xl">¿Cuál querés editar?</h2>
+                    <h2 id="booking-choice-title" className="mt-3 text-[22px] font-extrabold tracking-tight sm:text-2xl">Gestioná este horario</h2>
                     <p className="mt-1.5 text-sm leading-5 text-[var(--muted)]">
-                      Hay {bookingChoices.length} turnos reservados para las {bookingChoices[0]?.time} h. Elegí uno para continuar.
+                      {bookingChoices.bookings.length === 1
+                        ? `Hay un turno reservado para las ${bookingChoices.time} h.`
+                        : `Hay ${bookingChoices.bookings.length} turnos reservados para las ${bookingChoices.time} h.`}
+                      {bookingChoices.canAdd ? " También queda un lugar disponible." : ""}
                     </p>
                   </div>
                   <button
@@ -741,7 +752,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
                 </div>
 
                 <div className="mt-5 flex flex-col gap-2">
-                  {bookingChoices.map((booking, index) => (
+                  {bookingChoices.bookings.map((booking, index) => (
                     <button
                       key={booking.id}
                       type="button"
@@ -763,6 +774,27 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
                       </svg>
                     </button>
                   ))}
+                  {bookingChoices.canAdd && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const time = bookingChoices.time;
+                        setBookingChoices(null);
+                        setSelectedSlot(time);
+                        setStep(4);
+                        setError("");
+                      }}
+                      className="flex min-h-[68px] items-center gap-3 rounded-2xl border border-emerald-500/35 bg-emerald-500/10 px-3.5 py-3 text-left text-emerald-300 transition hover:bg-emerald-500/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+                    >
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-lg font-bold" aria-hidden="true">
+                        +
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-extrabold">Agregar turno</span>
+                        <span className="mt-0.5 block truncate text-xs text-emerald-200/75">{bookingChoices.time} h · queda un lugar disponible</span>
+                      </span>
+                    </button>
+                  )}
                 </div>
 
                 <button
@@ -770,7 +802,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
                   onClick={() => setBookingChoices(null)}
                   className="mt-4 min-h-11 w-full rounded-xl border border-[var(--border)] px-4 py-2.5 text-sm font-bold text-[var(--muted)] transition hover:border-accent/40 hover:text-[var(--text)]"
                 >
-                  Volver
+                  Cerrar
                 </button>
               </div>
             </section>
@@ -1031,46 +1063,30 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
                   if (reservedBookings.length > 0) {
                     const hasAvailableCapacity = slot.free;
                     return (
-                      <div
+                      <button
                         key={slot.time}
-                        className={`col-span-1 grid min-w-0 overflow-hidden rounded-xl border border-accent/40 bg-accent/[0.08] transition ${
-                          hasAvailableCapacity || reservedBookings.length > 1 ? "grid-cols-2" : "grid-cols-1"
-                        }`}
+                        type="button"
+                        aria-label={`Gestionar el horario de las ${slot.time}`}
+                        title={reservedBookings.map((booking) => `${booking.name} · ${booking.service}`).join(" / ")}
+                        onClick={() => handleReservedSlotClick(reservedBookings, slot.time, hasAvailableCapacity)}
+                        className="group relative col-span-1 flex min-h-10 min-w-0 items-center justify-center overflow-hidden rounded-xl border border-accent/40 bg-accent/[0.08] text-[var(--text)] transition hover:border-accent/75 focus-visible:z-20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                       >
-                        {reservedBookings.map((booking) => (
-                          <button
-                            key={booking.id}
-                            type="button"
-                            aria-label={`${reservedBookings.length > 1 ? "Elegir" : "Editar"} el turno de ${booking.name} a las ${booking.time}`}
-                            title={`${booking.name} · ${booking.service}`}
-                            onClick={() => handleReservedSlotClick(reservedBookings)}
-                            className="group flex min-h-[58px] min-w-0 flex-col items-center justify-center gap-0.5 border-r border-accent/25 bg-accent/[0.08] px-1.5 py-1.5 text-center text-accent transition last:border-r-0 hover:bg-accent/[0.16] focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
-                          >
-                            <span className="flex min-w-0 max-w-full items-center justify-center gap-1">
-                              <span className="truncate text-[11px] font-extrabold sm:text-xs">{booking.name}</span>
-                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" className="shrink-0 opacity-80 transition group-hover:opacity-100">
-                                <path d="m15.5 5.5 3 3M4 20l4.5-1 11-11a2.1 2.1 0 0 1 3-3l-11 11L4 20Z" />
-                              </svg>
-                            </span>
-                            <span className="text-[10px] font-bold tabular-nums text-accent/75">{booking.time} h</span>
-                          </button>
-                        ))}
                         {hasAvailableCapacity && (
-                          <button
-                            type="button"
-                            aria-label={`Reservar a las ${slot.time}`}
-                            className="flex min-h-[58px] min-w-0 flex-col items-center justify-center gap-0.5 bg-emerald-500/10 px-1.5 py-1.5 text-center text-emerald-300 transition hover:bg-emerald-500/20 focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-400"
-                            onClick={() => {
-                              setSelectedSlot(slot.time);
-                              setStep(4);
-                              setError("");
-                            }}
-                          >
-                            <span className="text-sm font-extrabold tabular-nums">{slot.time}</span>
-                            <span className="text-[10px] font-bold">+ Reservar</span>
-                          </button>
+                          <>
+                            <span aria-hidden="true" className="absolute inset-y-0 left-0 w-1/2 bg-accent/[0.15] transition group-hover:bg-accent/[0.22]" />
+                            <span aria-hidden="true" className="absolute inset-y-0 right-0 w-1/2 border-l border-emerald-400/55 bg-[#0c3b2f] transition group-hover:bg-[#124d3c]" />
+                          </>
                         )}
-                      </div>
+                        {!hasAvailableCapacity && <span aria-hidden="true" className="absolute inset-0 bg-accent/[0.15] transition group-hover:bg-accent/[0.22]" />}
+                        <span aria-hidden="true" className="relative z-10 text-[13px] font-extrabold tabular-nums">
+                          {slot.time}
+                        </span>
+                        <span aria-hidden="true" className={`absolute top-1/2 z-10 -translate-y-1/2 text-accent opacity-80 transition group-hover:opacity-100 ${hasAvailableCapacity ? "left-1/4 -translate-x-1/2" : "right-1.5"}`}>
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="m15.5 5.5 3 3M4 20l4.5-1 11-11a2.1 2.1 0 0 1 3-3l-11 11L4 20Z" />
+                          </svg>
+                        </span>
+                      </button>
                     );
                   }
                   const lleno = !slot.free;
@@ -1153,10 +1169,10 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
               duration={selectedServiceDetails?.duration}
             />
             {error && <p role="alert" className="text-[var(--red)] font-semibold">{error}</p>}
-            <form className="flex flex-col gap-3.5" onSubmit={handleSubmit}>
+            <form className="flex flex-col gap-3 sm:gap-3.5" onSubmit={handleSubmit}>
               <Field label="Nombre">
                 <input
-                  className="w-full px-3.5 py-3 rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] text-[var(--text)]"
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-soft)] px-3 py-2.5 text-sm text-[var(--text)] sm:rounded-xl sm:px-3.5 sm:py-3"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Tu nombre"
@@ -1165,7 +1181,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
               </Field>
               <Field label="Teléfono / WhatsApp">
                 <input
-                  className="w-full px-3.5 py-3 rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] text-[var(--text)]"
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-soft)] px-3 py-2.5 text-sm text-[var(--text)] sm:rounded-xl sm:px-3.5 sm:py-3"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="Ej: 1155667788"
@@ -1175,7 +1191,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
               </Field>
               <Field label="Contraseña para gestionar el turno">
                 <input
-                  className="w-full px-3.5 py-3 rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] text-[var(--text)]"
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-soft)] px-3 py-2.5 text-sm text-[var(--text)] sm:rounded-xl sm:px-3.5 sm:py-3"
                   type="password"
                   value={bookingPassword}
                   onChange={(e) => setBookingPassword(e.target.value)}
@@ -1185,11 +1201,11 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
                   autoComplete="new-password"
                   required
                 />
-                <span className="text-xs font-normal leading-5 text-[var(--muted)]">
+                <span className="text-[11px] font-normal leading-4 text-[var(--muted)] sm:text-xs sm:leading-5">
                   Solo se usa para verificar ediciones o cancelaciones. Guardala para gestionar tu turno desde cualquier dispositivo.
                 </span>
               </Field>
-              <label className="flex items-start gap-3 rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] p-3 text-sm text-[var(--muted)]">
+              <label className="flex items-start gap-2.5 rounded-lg border border-[var(--border)] bg-[var(--bg-soft)] p-2.5 text-[13px] leading-5 text-[var(--muted)] sm:rounded-xl sm:gap-3 sm:p-3 sm:text-sm">
                 <input
                   type="checkbox"
                   checked={termsAccepted}
@@ -1197,28 +1213,32 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
                     setTermsAccepted(event.target.checked);
                     if (event.target.checked) acceptTerms();
                   }}
-                  className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--accent)]"
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent)] sm:h-5 sm:w-5"
                 />
                 <span>
                   Acepto los términos: dejo mis datos para gestionar la reserva y me comprometo a avisar si no puedo asistir.
                 </span>
               </label>
-              <div className="grid grid-cols-1 sm:flex sm:justify-between gap-2.5">
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:justify-between sm:gap-2.5">
                 <button
                   type="button"
-                  className="w-full sm:w-auto px-4 py-3 rounded-xl bg-[var(--card-2)] border border-[var(--border)] font-bold text-[var(--text)] hover:border-[var(--accent)]"
+                  aria-label="Cambiar horario"
+                  title="Cambiar horario"
+                  className="min-w-0 rounded-lg border border-[var(--border)] bg-[var(--card-2)] px-2 py-2 text-xs font-bold text-[var(--text)] hover:border-[var(--accent)] sm:w-auto sm:rounded-xl sm:px-4 sm:py-3 sm:text-sm"
                   onClick={() => {
                     setStep(3);
                   }}
                 >
-                  Cambiar horario
+                  Cambiar
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="w-full sm:w-auto px-5 py-3 rounded-xl font-bold bg-gradient-to-b from-[var(--accent)] to-[var(--accent-strong)] text-[#1a1406] disabled:opacity-60"
+                  aria-label="Confirmar turno"
+                  title="Confirmar turno"
+                  className="min-w-0 rounded-lg bg-gradient-to-b from-[var(--accent)] to-[var(--accent-strong)] px-2 py-2 text-xs font-extrabold text-[#1a1406] disabled:opacity-60 sm:w-auto sm:rounded-xl sm:px-5 sm:py-3 sm:text-sm"
                 >
-                  {submitting ? "Reservando…" : "Confirmar turno"}
+                  {submitting ? "Guardando…" : "Confirmar"}
                 </button>
               </div>
             </form>
