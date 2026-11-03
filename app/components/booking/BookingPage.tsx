@@ -1028,7 +1028,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
               <div className="grid grid-cols-[repeat(auto-fill,minmax(78px,1fr))] gap-1.5 sm:gap-2">
                 {slots.map((slot) => {
                   const reservedBookings = slot.bookings || [];
-                  if (reservedBookings.length > 0) {
+                  if (reservedBookings.length > 0 && !slot.free) {
                     return (
                       <div
                         key={slot.time}
@@ -1045,14 +1045,6 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
                         className="col-span-1 min-w-0 cursor-pointer rounded-xl border border-accent/40 bg-accent/[0.08] p-1.5 transition hover:border-accent/75 hover:bg-accent/[0.14] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:p-2"
                       >
                         <div className="relative min-h-5">
-                          {reservedBookings.length > 1 && (
-                            <span
-                              className="absolute left-0 grid h-5 min-w-5 place-items-center rounded-full bg-accent/20 px-1 text-[9px] font-extrabold text-accent"
-                              aria-label={`${reservedBookings.length} turnos simultáneos`}
-                            >
-                              {reservedBookings.length}
-                            </span>
-                          )}
                           <span className="absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-[13px] font-extrabold tabular-nums text-accent">
                             <span className="line-through decoration-accent/75 decoration-[1px]">{slot.time}</span>
                           </span>
@@ -1083,7 +1075,6 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
                     );
                   }
                   const lleno = !slot.free;
-                  const parcial = slot.free && slot.ocupadas > 0;
                   if (selectedSlot === slot.time && slot.free) {
                     return (
                       <button
@@ -1112,35 +1103,6 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
                       </button>
                     );
                   }
-                  if (parcial) {
-                    const librePct = Math.round(
-                      ((slot.sillas - slot.ocupadas) / slot.sillas) * 100
-                    );
-                    return (
-                      <button
-                        key={slot.time}
-                        type="button"
-                        className="relative overflow-hidden rounded-xl border font-bold text-sm text-[#1a1406] border-emerald-500/50"
-                        onClick={() => {
-                          setSelectedSlot(slot.time);
-                          setStep(4);
-                          setError("");
-                        }}
-                      >
-                        <span
-                          className="absolute inset-y-0 right-0 bg-emerald-500/30"
-                          style={{ width: `${librePct}%` }}
-                        />
-                        <span
-                          className="absolute inset-y-0 left-0 bg-red-500/30"
-                          style={{ width: `${100 - librePct}%` }}
-                        />
-                        <span className="relative z-10 block py-2.5 text-center">
-                          {slot.time}
-                        </span>
-                      </button>
-                    );
-                  }
                   return (
                     <button
                       key={slot.time}
@@ -1165,7 +1127,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
                   <i className="w-2.5 h-2.5 rounded-full bg-accent" /> Reservado · editable
                 </span>
                 <span className="inline-flex items-center gap-1.5 text-[12.5px] text-[var(--muted)]">
-                  <i className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-red-400 to-emerald-400" /> Disponibilidad parcial
+                  <i className="w-2.5 h-2.5 rounded-full bg-red-400" /> Sin disponibilidad
                 </span>
               </div>
             </>
