@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   adminCreateBooking,
   adminDeleteBooking,
@@ -20,6 +20,7 @@ import {
 import { BarberPole, ServiceIcon } from "../booking/BarberIcons";
 import Navbar, { type AdminPanelTab } from "../Navbar";
 import ConfirmDialog from "../ConfirmDialog";
+import StatusToast from "../StatusToast";
 
 const DAY_NAMES = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const MONTH_NAMES = [
@@ -33,6 +34,33 @@ const STATUS_LABELS: Record<string, string> = {
   done: "Completado",
 };
 const AGENDA_PAGE_SIZE = 8;
+
+function adminToastPresentation(
+  tenantMessage: string,
+  agendaMessage: string,
+  saved: boolean,
+  tab: AdminPanelTab
+) {
+  if (tenantMessage) {
+    return { title: "Barbería creada", description: tenantMessage };
+  }
+  if (agendaMessage) {
+    const title = /completado/i.test(agendaMessage)
+      ? "Turno completado"
+      : /anulad/i.test(agendaMessage)
+        ? "Turno anulado"
+        : "Agenda actualizada";
+    return { title, description: agendaMessage };
+  }
+  if (!saved) return null;
+  if (tab === "imagenes") {
+    return { title: "Imágenes guardadas", description: "Las imágenes ya están actualizadas en la web de la barbería." };
+  }
+  if (tab === "web") {
+    return { title: "Sitio web actualizado", description: "Los cambios ya se reflejan en la página pública de la barbería." };
+  }
+  return { title: "Configuración guardada", description: "Los cambios de la barbería se guardaron correctamente." };
+}
 
 /** Clase de color del chip. Los turnos viejos ("pending") se ven como activos. */
 function statusClass(status: string) {
@@ -338,7 +366,6 @@ export default function AdminPage({
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
   const statusMenuRef = useRef<HTMLDivElement>(null);
   const datePickerRef = useRef<HTMLDivElement>(null);
-  const agendaMessageTimerRef = useRef<number | null>(null);
   const [search, setSearch] = useState("");
   const [manualBookingOpen, setManualBookingOpen] = useState(false);
   const [manualBookingForm, setManualBookingForm] = useState({
@@ -381,6 +408,11 @@ export default function AdminPage({
   const [leavingTenant, setLeavingTenant] = useState(false);
   const [bookingToDelete, setBookingToDelete] = useState<{ id: string; name: string; service: string; date: string; time: string } | null>(null);
   const [deletingBooking, setDeletingBooking] = useState(false);
+  const dismissAdminToast = useCallback(() => {
+    setAgendaMessage("");
+    setTenantMessage("");
+    setSaved(false);
+  }, []);
 
   useEffect(() => {
     window.sessionStorage.setItem("adminTab", tab);
@@ -517,23 +549,8 @@ export default function AdminPage({
     };
   }, [datePickerOpen]);
 
-  useEffect(() => {
-    return () => {
-      if (agendaMessageTimerRef.current !== null) {
-        window.clearTimeout(agendaMessageTimerRef.current);
-      }
-    };
-  }, []);
-
   function showAgendaMessage(message: string) {
     setAgendaMessage(message);
-    if (agendaMessageTimerRef.current !== null) {
-      window.clearTimeout(agendaMessageTimerRef.current);
-    }
-    agendaMessageTimerRef.current = window.setTimeout(() => {
-      setAgendaMessage("");
-      agendaMessageTimerRef.current = null;
-    }, 4200);
   }
 
   async function changeStatus(id: string, newStatus: string) {
@@ -560,7 +577,7 @@ export default function AdminPage({
     setError("");
     try {
       const created = await superadminCreateTenant(tenantForm);
-      setTenantMessage(`Barbería creada: ${created.name}. El dueño ya puede ingresar con su email.`);
+      setTenantMessage(`${created.name} quedó lista. El dueño ya puede ingresar con su email.`);
       setTenantForm({ name: "", slug: "", ownerEmail: "", ownerPassword: "" });
       setTenants(await superadminGetTenants(token));
       setTenantModalOpen(false);
@@ -1017,6 +1034,7 @@ export default function AdminPage({
   // ¿Quedó algo en el borrador sin guardar? (avisa junto a los botones de guardar)
   const sinGuardar =
     Boolean(draft && settings) && JSON.stringify(draft) !== JSON.stringify(settings);
+  const adminToast = adminToastPresentation(tenantMessage, agendaMessage, saved, tab);
 
   return (
     <div className="booking-bg overflow-x-hidden">
@@ -1029,6 +1047,12 @@ export default function AdminPage({
         onAdminTabChange={setTab}
         tenantSlug={activeTenantSlug}
         onLogout={onLogout}
+      />
+      <StatusToast
+        open={Boolean(adminToast)}
+        title={adminToast?.title || "Cambios guardados"}
+        description={adminToast?.description || "La operación se completó correctamente."}
+        onClose={dismissAdminToast}
       />
       <div className="flex flex-col gap-4 max-w-[720px] lg:max-w-5xl w-full mx-auto pt-20 px-3 pb-10 sm:gap-5 sm:pt-24 sm:px-5 sm:pb-16 lg:pt-28">
 
@@ -1099,7 +1123,6 @@ export default function AdminPage({
                 Crear barbería
               </button>
             </div>
-            {tenantMessage && <p role="status" className="rounded-xl border border-emerald-400/30 bg-emerald-400/[0.08] px-3.5 py-2.5 text-sm font-semibold text-emerald-400">{tenantMessage}</p>}
             <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 sm:p-[22px]">
               <h2 className="font-bold">Barberías existentes</h2>
               {tenants.length === 0 ? (
@@ -1393,12 +1416,6 @@ export default function AdminPage({
                 />
               </div>
             </section>
-
-            {agendaMessage && (
-              <p role="status" className="rounded-xl border border-emerald-400/30 bg-emerald-400/[0.08] px-3.5 py-2.5 text-sm font-semibold text-emerald-400">
-                {agendaMessage}
-              </p>
-            )}
 
             <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 sm:p-[22px] flex flex-col gap-3.5">
               <div ref={datePickerRef} className="sticky top-[4.5rem] z-20 relative flex items-center justify-center gap-2 border-b border-[var(--border)] bg-[var(--card)]/95 pb-3 backdrop-blur sm:top-[5.5rem] lg:top-[8.5rem]">
@@ -2165,8 +2182,6 @@ export default function AdminPage({
             </p>
 
             {error && <p className="text-[var(--red)] font-semibold">{error}</p>}
-            {saved && <p className="text-emerald-400 font-semibold">Configuración guardada ✓</p>}
-
             <div className="sticky bottom-3 z-10 flex flex-wrap items-center gap-3 bg-[var(--card)]">
               <button
                 type="submit"
@@ -2325,12 +2340,6 @@ export default function AdminPage({
             </Field>
 
             {error && <p className="text-[var(--red)] font-semibold">{error}</p>}
-            {saved && (
-              <p className="text-emerald-400 font-semibold">
-                Sitio web actualizado ✓
-              </p>
-            )}
-
             <div className="sticky bottom-3 z-10 flex flex-wrap items-center gap-3 bg-[var(--card)]">
               <button
                 type="submit"
@@ -2593,10 +2602,6 @@ export default function AdminPage({
                 + Agregar profesional
               </button>
             </div>
-
-            {saved && (
-              <p className="text-emerald-400 font-semibold">Imágenes guardadas ✓</p>
-            )}
 
             <div className="sticky bottom-3 z-10 flex flex-wrap items-center gap-3 bg-[var(--card)]">
               <button

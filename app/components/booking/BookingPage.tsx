@@ -19,6 +19,7 @@ import Navbar from "../Navbar";
 import ConfirmDialog from "../ConfirmDialog";
 import HairCelebration from "./HairCelebration";
 import BookingSuccessModal from "./BookingSuccessModal";
+import StatusToast, { type StatusToastTone } from "../StatusToast";
 
 const DAY_NAMES = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const MONTH_NAMES = [
@@ -79,6 +80,15 @@ function requiresBookingPassword(booking?: BookingConfirmation | null) {
     !booking.manageToken &&
     (booking.managePasswordRequired || booking.manageId)
   );
+}
+
+function bookingNoticePresentation(message: string): { title: string; tone: StatusToastTone } {
+  if (/cancel/i.test(message)) return { title: "Turno cancelado", tone: "success" };
+  if (/actualiz/i.test(message)) return { title: "Turno actualizado", tone: "success" };
+  if (/complet/i.test(message)) return { title: "Turno completado", tone: "success" };
+  if (/finaliz/i.test(message)) return { title: "Turno finalizado", tone: "info" };
+  if (/no está disponible|quitaron|quitó/i.test(message)) return { title: "Turno no disponible", tone: "warning" };
+  return { title: "Información de tus turnos", tone: "info" };
 }
 
 /** Fecha y hora local de la barbería en formato "YYYY-MM-DD HH:MM" (para comparar). */
@@ -160,7 +170,7 @@ function loadStoredBookings(tenantSlug?: string): BookingConfirmation[] {
 
 function inactiveNotice(booking: { status?: string }) {
   if (booking.status === "cancelled") {
-    return "Tu turno fue cancelado y el horario ya quedó liberado.";
+    return "Listo, cancelamos tu turno y actualizamos la agenda de la barbería.";
   }
   if (booking.status === "done") {
     return "Tu turno ya fue completado. Cuando quieras, podés reservar uno nuevo.";
@@ -315,7 +325,9 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
     `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`)
   );
   const visibleBookings = showAllBookings ? upcomingBookings : upcomingBookings.slice(0, 1);
+  const bookingNoticeView = bookingNoticePresentation(bookingNotice);
   const closeBookingSuccess = useCallback(() => setBookingSuccess(null), []);
+  const closeBookingNotice = useCallback(() => setBookingNotice(""), []);
 
   useEffect(() => {
     document.title = barberName
@@ -416,7 +428,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
         if (cancelled) return;
         setEditSlots(data.slots || []);
         setEditTime((current) =>
-          data.slots.some((slot) => slot.time === current && (slot.free || slot.time === bookingToEdit.time))
+          data.slots.some((slot) => !slot.past && slot.time === current && (slot.free || slot.time === bookingToEdit.time))
             ? current
             : ""
         );
@@ -649,7 +661,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
         bookingToCancel.phone
       );
       setBookings((prev) => prev.filter((entry) => entry._id !== bookingToCancel._id));
-      setBookingNotice("El turno fue cancelado y el horario ya quedó liberado.");
+      setBookingNotice("Listo, cancelamos tu turno y actualizamos la agenda de la barbería.");
       setBookingToCancel(null);
       setCancelPassword("");
       await refreshSlots();
@@ -676,13 +688,14 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
           onClose={closeBookingSuccess}
         />
       )}
+      <StatusToast
+        open={Boolean(bookingNotice)}
+        title={bookingNoticeView.title}
+        description={bookingNotice}
+        tone={bookingNoticeView.tone}
+        onClose={closeBookingNotice}
+      />
       <div className="flex flex-col gap-4 sm:gap-5 max-w-[720px] w-full mx-auto pt-20 sm:pt-24 px-3.5 sm:px-5 pb-12 sm:pb-16">
-
-        {bookingNotice && (
-          <p role="status" className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-300">
-            {bookingNotice}
-          </p>
-        )}
 
         {/* Hero */}
         <section className="relative h-[215px] sm:h-[270px] rounded-[18px] sm:rounded-[20px] overflow-hidden border border-[var(--border)]">
@@ -1014,7 +1027,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
                       className="w-full rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] px-3.5 py-3 text-[var(--text)] disabled:opacity-60"
                     >
                       <option value="">{editLoading ? "Cargando horarios…" : "Elegí un horario"}</option>
-                      {editSlots.filter((slot) => slot.free || slot.time === bookingToEdit.time).map((slot) => (
+                      {editSlots.filter((slot) => !slot.past && (slot.free || slot.time === bookingToEdit.time)).map((slot) => (
                         <option key={slot.time} value={slot.time}>{slot.time} h</option>
                       ))}
                     </select>
@@ -1182,6 +1195,19 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
               <div className="grid grid-cols-[repeat(auto-fill,minmax(78px,1fr))] gap-1.5 sm:gap-2">
                 {slots.map((slot) => {
                   const reservedBookings = slot.bookings || [];
+                  if (slot.past) {
+                    return (
+                      <button
+                        key={slot.time}
+                        type="button"
+                        disabled
+                        aria-label={`${slot.time}, horario pasado`}
+                        className="cursor-default rounded-xl border border-red-500/38 bg-red-500/12 py-2.5 text-sm font-bold text-red-300 line-through opacity-80"
+                      >
+                        {slot.time}
+                      </button>
+                    );
+                  }
                   if (reservedBookings.length > 0) {
                     const hasAvailableCapacity = slot.free;
                     return (
@@ -1234,7 +1260,8 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
                         key={slot.time}
                         type="button"
                         disabled
-                        className="py-2.5 rounded-xl border font-bold text-sm bg-red-500/12 text-red-300 border-red-500/38 line-through cursor-default"
+                        aria-label={`${slot.time}, no disponible`}
+                        className="cursor-default rounded-xl border border-[var(--border)] bg-[var(--bg-soft)] py-2.5 text-sm font-bold text-[var(--muted)] opacity-55"
                       >
                         {slot.time}
                       </button>

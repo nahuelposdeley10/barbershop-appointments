@@ -185,6 +185,33 @@ input[type="time"] {
   opacity: 0.8;
 }
 
+@keyframes status-toast-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes status-toast-progress {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+.status-toast {
+  animation: status-toast-enter 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.status-toast-progress {
+  transform-origin: left;
+  animation-name: status-toast-progress;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
 @media (max-width: 640px) {
   .booking-bg {
     padding: 0;
