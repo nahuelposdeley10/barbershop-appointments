@@ -270,6 +270,25 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
   const [cancelError, setCancelError] = useState("");
   const [cancelPassword, setCancelPassword] = useState("");
   const didHydrate = useRef(false);
+  const timeSectionRef = useRef<HTMLElement>(null);
+  const dateSectionRef = useRef<HTMLElement>(null);
+  const pendingFocusStep = useRef<2 | 3 | null>(null);
+
+  useEffect(() => {
+    if (pendingFocusStep.current !== step || (step !== 2 && step !== 3)) return;
+    if (step === 3 && loading) return;
+    const frame = window.requestAnimationFrame(() => {
+      const section = step === 2 ? dateSectionRef.current : timeSectionRef.current;
+      if (!section) return;
+      pendingFocusStep.current = null;
+      section.focus({ preventScroll: true });
+      section.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+        block: "start",
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [step, date, loading]);
 
   const freeCount = slots.filter((s) => s.free).length;
   const selectedServiceDetails = services.find((service) => service.name === selectedService);
@@ -659,17 +678,6 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
           </div>
         </section>
 
-        {/* Features */}
-        <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
-          {["Sin esperas", "Confirmación rápida", "Agenda online"].map(
-            (f) => (
-              <span key={f} className="min-h-10 flex items-center justify-center text-center leading-tight text-[10.5px] sm:text-[13px] font-bold text-[var(--text)] bg-[var(--card)] border border-[var(--border)] rounded-xl sm:rounded-full px-1.5 sm:px-3.5 py-1.5">
-                ✓ {f}
-              </span>
-            )
-          )}
-        </div>
-
         <ConfirmDialog
           open={Boolean(bookingToCancel)}
           title="¿Cancelar este turno?"
@@ -950,6 +958,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
                 key={s.name}
                 type="button"
                 onClick={() => {
+                  pendingFocusStep.current = 2;
                   setSelectedService(s.name);
                   setDate("");
                   setSelectedSlot("");
@@ -998,8 +1007,8 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
         </section>}
 
         {/* Step 2: Day */}
-        {step === 2 && <section className="bg-[var(--card)] border border-[var(--accent)] rounded-[22px] sm:rounded-2xl p-4 sm:p-[22px] flex flex-col gap-3.5 sm:gap-4 shadow-[0_18px_60px_rgba(0,0,0,0.18)]">
-          <h2 className="text-[17px] font-bold">
+        {step === 2 && <section ref={dateSectionRef} tabIndex={-1} aria-labelledby="booking-date-title" className="scroll-mt-20 bg-[var(--card)] border border-[var(--accent)] rounded-[22px] sm:rounded-2xl p-4 sm:p-[22px] flex flex-col gap-3.5 sm:gap-4 shadow-[0_18px_60px_rgba(0,0,0,0.18)]">
+          <h2 id="booking-date-title" className="text-[17px] font-bold">
             <Step n={2} /> ¿Qué día te queda cómodo?
           </h2>
           <p className="text-[var(--muted)] text-sm">
@@ -1014,6 +1023,7 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
               service={selectedService}
               tenantSlug={tenantSlug}
               onSelect={(d) => {
+                pendingFocusStep.current = 3;
                 setDate(d);
                 setSelectedSlot("");
                 setStep(3);
@@ -1033,8 +1043,8 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
         </section>}
 
         {/* Step 3: Time */}
-        {step === 3 && date && <section className="bg-[var(--card)] border border-[var(--accent)] rounded-[22px] sm:rounded-2xl p-4 sm:p-[22px] flex flex-col gap-3.5 sm:gap-4 shadow-[0_18px_60px_rgba(0,0,0,0.18)]">
-          <h2 className="text-[17px] font-bold">
+        {step === 3 && date && <section ref={timeSectionRef} tabIndex={-1} aria-labelledby="booking-time-title" className="scroll-mt-20 bg-[var(--card)] border border-[var(--accent)] rounded-[22px] sm:rounded-2xl p-4 sm:p-[22px] flex flex-col gap-3.5 sm:gap-4 shadow-[0_18px_60px_rgba(0,0,0,0.18)]">
+          <h2 id="booking-time-title" className="text-[17px] font-bold">
             <Step n={3} /> Elegí un horario
           </h2>
           <SelectionSummary
@@ -1140,9 +1150,6 @@ export default function BookingPage({ tenantSlug }: { tenantSlug?: string }) {
                 </span>
                 <span className="inline-flex items-center gap-1.5 text-[12.5px] text-[var(--muted)]">
                   <i className="w-2.5 h-2.5 rounded-full bg-accent" /> Reservado · editable
-                </span>
-                <span className="inline-flex items-center gap-1.5 text-[12.5px] text-[var(--muted)]">
-                  <i className="w-2.5 h-2.5 rounded-full bg-red-400" /> Sin disponibilidad
                 </span>
               </div>
             </>
